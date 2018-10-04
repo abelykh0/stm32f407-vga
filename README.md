@@ -17,7 +17,7 @@ This is the what you need to try my project:
 | Jumper wires | 15
 | ST-Link v2 or clone | 1
 
-Software (under Windows): Install free IDE [System Workbench for STM32](https://www.st.com/en/development-tools/sw4stm32.html/).
+Software: Install free IDE [System Workbench for STM32](https://www.st.com/en/development-tools/sw4stm32.html/). I am using Windows 10, however STMicroelectronics claims that it also supports Linux and Mac.
 
 How to connect wires:
 
