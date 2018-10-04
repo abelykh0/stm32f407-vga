@@ -2,6 +2,7 @@
 #define _VIDEOSETTINGS_H
 
 #include <stdint.h>
+#include "m4vgalib/timing.h"
 
 namespace Display
 {
@@ -9,6 +10,8 @@ namespace Display
 class VideoSettings
 {
   public:
+	const vga::Timing* Timing;
+
 	uint8_t Scale;
 
 	// text resolution
