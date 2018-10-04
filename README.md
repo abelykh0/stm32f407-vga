@@ -5,7 +5,7 @@ VGA demo on Black F407VET6 (using STM32F407VE microcontroller)
 It displays "Hello, world!" on a VGA connected to a Black F407VET6 board.
 
 ## Installation
-If you want to try my project, this is the only part that you need.
+This is the what you need to try my project:
 
 | Hardware      |    Qty|
 | ------------- | -----:|
