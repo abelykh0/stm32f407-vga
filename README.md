@@ -9,7 +9,7 @@ If you want to try my project, this is the only part that you need.
 
 | Hardware      |    Qty|
 | ------------- | -----:|
-| "Black F407VET6" board | 1
+| [Black F407VET6](http://wiki.stm32duino.com/index.php?title=STM32F407) board | 1
 | Resistors 470 Ohm | 3
 | Resistors 680 Ohm | 3
 | Breadboard | 1
