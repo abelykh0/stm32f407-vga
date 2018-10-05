@@ -31,7 +31,7 @@ VideoSettings _videoSettings {
 	TEXT_COLUMNS, TEXT_ROWS,
 	_pixels, _attributes, &_borderColor
 };
-Screen _screen(_videoSettings, 0);
+Screen _screen(_videoSettings);
 vga::Band _band {
 	&_screen,
 	(unsigned int)(_videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line),

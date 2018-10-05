@@ -21,11 +21,14 @@ private:
                 uint16_t i, uint8_t width, uint8_t lines);
     void CursorNext();
 
+	uint16_t _startLine;
+    uint16_t _horizontalBorder;
+    uint8_t _verticalBorder;
+
 protected:
 	virtual uint8_t* GetPixelPointer(uint8_t line);
 	virtual uint8_t* GetPixelPointer(uint8_t line, uint8_t character);
 	VideoSettings _settings;
-	uint16_t _startLine;
 
     uint16_t _hResolution;
     uint16_t _vResolution;
@@ -37,13 +40,9 @@ protected:
     uint8_t _cursor_x = 0;
     uint8_t _cursor_y = 0;
 
-//    uint16_t _leftBorder;
-//    uint16_t _rightBorder;
-//    uint8_t _bottomBorder;
-//    uint8_t _topBorder;
-
 public:
-	Screen(VideoSettings settings, uint16_t startLine);
+	Screen(VideoSettings settings);
+	Screen(VideoSettings settings, uint16_t startLine, uint16_t height);
 
 	void Clear();
 	void SetFont(const uint8_t* font);

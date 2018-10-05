@@ -5,13 +5,23 @@
 namespace Display
 {
 
-Screen::Screen(VideoSettings settings, uint16_t startLine)
+Screen::Screen(VideoSettings settings)
+	: Screen(settings, 0,
+			settings.Timing->video_end_line - settings.Timing->video_start_line)
+{
+}
+
+Screen::Screen(VideoSettings settings, uint16_t startLine, uint16_t height)
 {
 	this->_settings = settings;
 	this->_startLine = startLine;
 
 	this->_hResolution = this->_settings.TextColumns * 8;
 	this->_vResolution = this->_settings.TextRows * 8;
+
+	this->_horizontalBorder = ((this->_hResolution - this->_settings.Timing->video_pixels) / 2);
+    this->_verticalBorder = ((this->_vResolution - height) / 2);
+
 	this->_pixelCount = this->_settings.TextColumns * this->_vResolution;
 	this->_attributeCount = this->_settings.TextColumns
 			* this->_settings.TextRows;
@@ -97,17 +107,33 @@ __attribute__((section(".ramcode")))
       Rasterizer::RasterInfo Screen::rasterize(
 		unsigned cycles_per_pixel, unsigned line_number, Pixel *target)
 {
-    uint8_t vline = (line_number - this->_startLine) / this->_settings.Scale;
-    uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
-    uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
-    uint8_t *dest = target;
+    uint8_t borderColor = *this->_settings.BorderColor;
 
-    for (int i = 0; i < ((this->_hResolution + 16) / 32); i++)
+    if (line_number / this->_settings.Scale < this->_verticalBorder
+    	|| line_number / this->_settings.Scale >= (unsigned)(this->_vResolution - this->_verticalBorder))
     {
-        this->Draw4(bitmap, colors, dest);
-        bitmap += 4; // characters
-        colors += 4; // attributes
-        dest += 32;  // pixels
+        memset(&target[0], borderColor, this->_hResolution);
+    }
+    else
+    {
+        // Border to the left
+        memset(&target[0], borderColor, this->_horizontalBorder);
+
+        uint8_t vline = (line_number - this->_startLine) / this->_settings.Scale;
+        uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
+        uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
+        uint8_t *dest = target;
+
+        for (int i = 0; i < ((this->_hResolution + 16) / 32); i++)
+        {
+            this->Draw4(bitmap, colors, dest);
+            bitmap += 4; // characters
+            colors += 4; // attributes
+            dest += 32;  // pixels
+        }
+
+        // Border to the right
+        memset(&target[this->_hResolution - this->_horizontalBorder], borderColor, this->_horizontalBorder);
     }
 
 	Rasterizer::RasterInfo result;
@@ -285,7 +311,7 @@ void Screen::Draw4(uint8_t *bitmap, uint16_t *colors, uint8_t *dest)
 			"  strb r0, [%[odr]], #1 \n\t"
 			".endr   \n\t"
 
-			"  ldr r3, [%[col]], #4 \n\t"// colors for next 2 characters
+			"  ldr r3, [%[col]], #4 \n\t"// colors for for characters 2..3
 
 			// character #2
 			"  ror r1, r1, #15   \n\t"// pixels >> 15

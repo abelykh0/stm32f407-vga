@@ -4,6 +4,16 @@
 namespace Display
 {
 
+SpectrumScreen::SpectrumScreen(VideoSettings settings)
+	: Screen(settings)
+{
+}
+
+SpectrumScreen::SpectrumScreen(VideoSettings settings, uint16_t startLine, uint16_t height)
+: Screen(settings, startLine, height)
+{
+}
+
 uint8_t* SpectrumScreen::GetPixelPointer(uint8_t line)
 {
 	// ZX Sinclair addressing

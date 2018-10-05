@@ -14,7 +14,8 @@ protected:
 	uint8_t* GetPixelPointer(uint8_t line, uint8_t character) override;
 
 public:
-	SpectrumScreen(VideoSettings settings, uint16_t startLine);
+	SpectrumScreen(VideoSettings settings);
+	SpectrumScreen(VideoSettings settings, uint16_t startLine, uint16_t height);
 
 	void ShowScreenshot(const char *screenshot);
 	uint16_t FromSpectrumColor(uint8_t sinclairColor);
