@@ -6,9 +6,10 @@
 #include "m4vgalib/timing.h"
 
 #include "etl/stm32f4xx/gpio.h"
-using namespace etl::stm32f4xx;
-
 #include <Display/Screen.h>
+#include <Keyboard/ps2Keyboard.h>
+
+using namespace etl::stm32f4xx;
 using namespace Display;
 
 // Screen 48 x 37 characters
@@ -69,6 +70,9 @@ extern "C" void setup()
     }
 
     _screen.PrintAt(17, 18, "Hello, world!");
+
+    // Initialize PS2 Keyboard
+    Ps2_Initialize();
 
     // Initialize GPIOA
     rcc.enable_clock(AhbPeripheral::gpioa);
