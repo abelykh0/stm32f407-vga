@@ -18,14 +18,14 @@ Screen::Screen(VideoSettings setings, uint16_t startLine)
 			* this->_setings.TextRows;
 }
 
-void Screen::Clear(uint16_t color)
+void Screen::Clear()
 {
 	memset(this->_setings.Pixels, 0, this->_pixelCount);
 	for (int i = 0; i < this->_attributeCount; i++)
 	{
-		this->_setings.Attributes[i] = color;
+		this->_setings.Attributes[i] = this->_attribute;
 	}
-	*this->_setings.BorderColor = (uint8_t) color;
+	*this->_setings.BorderColor = (uint8_t) this->_attribute;
 }
 
 void Screen::ShowSinclairScreenshot(const char *screenshot)

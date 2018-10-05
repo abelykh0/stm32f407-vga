@@ -25,7 +25,7 @@ VideoSettings _videoSettings {
 	// timing_vesa_800x600_60hz
 	// timing_vesa_640x480_60hz
 	// timing_800x600_56hz
-	&vga::timing_vesa_800x600_60hz, // Timing
+	&vga::timing_800x600_56hz, // Timing
 	2,  // Scale
 
 	TEXT_COLUMNS, TEXT_ROWS,
@@ -48,9 +48,27 @@ extern "C" void setup()
     // Inform HAL that CPU speed changed
     SystemCoreClockUpdate();
 
+    _screen.Clear();
     vga::configure_band_list(&_band);
     vga::video_on();
 
+    _screen.PrintAt(0, 0, "\x99"); // ╔
+    for (int i = 1; i < TEXT_COLUMNS - 2; i++)
+    {
+        _screen.PrintAt(i, 0, "\x9d"); // ═
+    }
+    _screen.PrintAt(0, TEXT_COLUMNS - 1, "\x8b"); // ╗
+    for (int i = 1; i < TEXT_ROWS - 2; i++)
+    {
+        _screen.PrintAt(0, i, "\x8a"); // ║
+        _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x8a"); // ║
+    }
+    _screen.PrintAt(0, TEXT_ROWS - 1, "\x90"); // ╚
+    for (int i = 1; i < TEXT_COLUMNS - 2; i++)
+    {
+        _screen.PrintAt(i, TEXT_ROWS - 1, "\x9d"); // ═
+    }
+    _screen.PrintAt(TEXT_COLUMNS - 1, TEXT_ROWS - 1, "\x95"); // ╝
     _screen.PrintAt(10, 10, "Hello, world!");
 
     // Initialize GPIOA

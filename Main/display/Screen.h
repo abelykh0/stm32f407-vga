@@ -21,7 +21,7 @@ private:
     uint16_t _pixelCount;
     uint16_t _attributeCount;
 
-    uint8_t* _font = nullptr;
+    uint8_t* _font = (uint8_t*)font8x8;
     uint16_t _attribute = 0x3F10; // white on blue
     uint8_t _cursor_x = 0;
     uint8_t _cursor_y = 0;
@@ -42,7 +42,7 @@ private:
 public:
 	Screen(VideoSettings setings, uint16_t startLine);
 
-	void Clear(uint16_t color);
+	void Clear();
 	void SetFont(const uint8_t* font);
 	void SetAttribute(uint16_t attribute);
 	void SetCursorPosition(uint8_t x, uint8_t y);
