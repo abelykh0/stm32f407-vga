@@ -42,34 +42,33 @@ extern "C" void setup()
 {
 	vga::init();
 
-    // This changes CPU speed
+    // This changes the CPU clock speed
     vga::configure_timing(*_videoSettings.Timing);
 
-    // Inform HAL that CPU speed changed
+    // Inform HAL that the CPU clock speed changed
     SystemCoreClockUpdate();
 
     _screen.Clear();
     vga::configure_band_list(&_band);
     vga::video_on();
 
-    _screen.PrintAt(0, 0, "\x99"); // ╔
+    // Display frame
+    _screen.PrintAt(0, 0, "\xC9"); // ╔
+    _screen.PrintAt(0, TEXT_COLUMNS - 1, "\xBB"); // ╗
+    _screen.PrintAt(0, TEXT_ROWS - 1, "\xC8"); // ╚
+    _screen.PrintAt(TEXT_COLUMNS - 1, TEXT_ROWS - 1, "\xBC"); // ╝
     for (int i = 1; i < TEXT_COLUMNS - 2; i++)
     {
-        _screen.PrintAt(i, 0, "\x9d"); // ═
+        _screen.PrintAt(i, 0, "\xCD"); // ═
+        _screen.PrintAt(i, TEXT_ROWS - 1, "\xCD"); // ═
     }
-    _screen.PrintAt(0, TEXT_COLUMNS - 1, "\x8b"); // ╗
     for (int i = 1; i < TEXT_ROWS - 2; i++)
     {
-        _screen.PrintAt(0, i, "\x8a"); // ║
-        _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x8a"); // ║
+        _screen.PrintAt(0, i, "\xBA"); // ║
+        _screen.PrintAt(TEXT_COLUMNS - 1, i, "\xBA"); // ║
     }
-    _screen.PrintAt(0, TEXT_ROWS - 1, "\x90"); // ╚
-    for (int i = 1; i < TEXT_COLUMNS - 2; i++)
-    {
-        _screen.PrintAt(i, TEXT_ROWS - 1, "\x9d"); // ═
-    }
-    _screen.PrintAt(TEXT_COLUMNS - 1, TEXT_ROWS - 1, "\x95"); // ╝
-    _screen.PrintAt(10, 10, "Hello, world!");
+
+    _screen.PrintAt(17, 18, "Hello, world!");
 
     // Initialize GPIOA
     rcc.enable_clock(AhbPeripheral::gpioa);
