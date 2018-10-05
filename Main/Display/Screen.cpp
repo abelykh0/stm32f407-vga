@@ -1,58 +1,39 @@
-#include "screen.h"
-
+#include <Display/Screen.h>
 #include <string.h>
 #include "m4vgalib/vga.h"
 
 namespace Display
 {
 
-Screen::Screen(VideoSettings setings, uint16_t startLine)
+Screen::Screen(VideoSettings settings, uint16_t startLine)
 {
-	this->_setings = setings;
+	this->_settings = settings;
 	this->_startLine = startLine;
 
-	this->_hResolution = this->_setings.TextColumns * 8;
-	this->_vResolution = this->_setings.TextRows * 8;
-	this->_pixelCount = this->_setings.TextColumns * this->_vResolution;
-	this->_attributeCount = this->_setings.TextColumns
-			* this->_setings.TextRows;
+	this->_hResolution = this->_settings.TextColumns * 8;
+	this->_vResolution = this->_settings.TextRows * 8;
+	this->_pixelCount = this->_settings.TextColumns * this->_vResolution;
+	this->_attributeCount = this->_settings.TextColumns
+			* this->_settings.TextRows;
 }
 
 void Screen::Clear()
 {
-	memset(this->_setings.Pixels, 0, this->_pixelCount);
+	memset(this->_settings.Pixels, 0, this->_pixelCount);
 	for (int i = 0; i < this->_attributeCount; i++)
 	{
-		this->_setings.Attributes[i] = this->_attribute;
+		this->_settings.Attributes[i] = this->_attribute;
 	}
-	*this->_setings.BorderColor = (uint8_t) this->_attribute;
-}
-
-void Screen::ShowSinclairScreenshot(const char *screenshot)
-{
-	memcpy(this->_setings.Pixels, screenshot, this->_pixelCount);
-	for (uint32_t i = 0; i < this->_attributeCount; i++)
-	{
-		this->_setings.Attributes[i] = this->FromSinclairColor(
-				screenshot[this->_pixelCount + i]);
-	}
+	*this->_settings.BorderColor = (uint8_t) this->_attribute;
 }
 
 uint8_t* Screen::GetPixelPointer(uint8_t line)
 {
-	// ZX Sinclair addressing
-	// 00-00-00-Y7-Y6-Y2-Y1-Y0 Y5-Y4-Y3-x4-x3-x2-x1-x0
-	//          12 11 10  9  8  7  6  5  4  3  2  1  0
-
-	uint32_t y012 = ((line & 0B00000111) << 8);
-	uint32_t y345 = ((line & 0B00111000) << 2);
-	uint32_t y67 = ((line & 0B11000000) << 5);
-	return &this->_setings.Pixels[y012 | y345 | y67];
+    return &this->_settings.Pixels[line * this->_settings.TextColumns];
 }
 
 uint8_t* Screen::GetPixelPointer(uint8_t line, uint8_t character)
 {
-	character &= 0B00011111;
 	return this->GetPixelPointer(line) + character;
 }
 
@@ -73,14 +54,14 @@ void Screen::SetCursorPosition(uint8_t x, uint8_t y)
 		return;
 	}
 
-	if (x >= this->_setings.TextColumns)
+	if (x >= this->_settings.TextColumns)
 	{
-		x = this->_setings.TextColumns - 1;
+		x = this->_settings.TextColumns - 1;
 	}
 
-	if (y >= this->_setings.TextRows)
+	if (y >= this->_settings.TextRows)
 	{
-		y = this->_setings.TextRows - 1;
+		y = this->_settings.TextRows - 1;
 	}
 
 	this->_cursor_x = x;
@@ -112,94 +93,13 @@ void Screen::PrintAlignRight(uint8_t x, uint8_t y, const char *str)
     this->PrintAt(leftX, y, str);
 }
 
-uint16_t Screen::FromSinclairColor(uint8_t sinclairColor)
-{
-	// Sinclair: Flash-Bright-PaperG-PaperR-PaperB-InkG-InkR-InkB
-	//               7      6      5      4      3    2    1    0
-	// Our colors: 00-PaperB01-PaperG01-PaperR01 : 00-InkB01-InkG01-InkR01
-	//                      54       32       10 :        54     32     10
-
-	bool bright = ((sinclairColor & 0B01000000) != 0);
-
-	uint16_t ink = ((sinclairColor & 0B00000100) << 8); // InkG
-	ink |= ((sinclairColor & 0B00000010) << 7);         // InkR
-	ink |= ((sinclairColor & 0B00000001) << 12);        // InkB
-	if (bright)
-	{
-		ink |= (ink << 1);
-	}
-
-	uint16_t paper = ((sinclairColor & 0B00100000) >> 3); // PaperG
-	paper |= ((sinclairColor & 0B00010000) >> 4);         // PaperR
-	paper |= ((sinclairColor & 0B00001000) << 1);         // PaperB
-	if (bright)
-	{
-		paper |= (paper << 1);
-	}
-
-	uint16_t result = ink | paper;
-
-	if (bright)
-	{
-		// This is only needed to correctly read back "bright black" color
-		result |= 0x4000;
-	}
-
-	if ((sinclairColor & 0B10000000) != 0)
-	{
-		// Blink
-		result |= 0x8000;
-	}
-
-	return result;
-}
-
-uint8_t Screen::ToSinclairColor(uint16_t color)
-{
-	// Our colors: 00-PaperB01-PaperG01-PaperR01 : 00-InkB01-InkG01-InkR01
-	//                      54       32       10 :        54     32     10
-	// Sinclair: Flash-Bright-PaperG-PaperR-PaperB-InkG-InkR-InkB
-	//               7      6      5      4      3    2    1    0
-
-	uint8_t result = 0;
-
-	if ((color & 0x0080) != 0)
-	{
-		// Flash, need to swap bytes
-		color = __builtin_bswap16(color);
-	}
-
-	if ((color & 0x4000) != 0)
-	{
-		// Bright
-		result |= 0B01000000;
-	}
-
-	if ((color & 0x8000) != 0)
-	{
-		// Flash
-		result |= 0B10000000;
-	}
-
-	result |= ((color & 0B00010000) >> 1); // PaperB
-	result |= ((color & 0B00000001) << 4); // PaperR
-	result |= ((color & 0B00000100) << 3); // PaperG
-
-	color >>= 8;
-	result |= ((color & 0B00010000) >> 4); // InkB
-	result |= ((color & 0B00000001) << 1); // InkR
-	result |= (color & 0B00000100);        // InkG
-
-	return result;
-}
-
 __attribute__((section(".ramcode")))
       Rasterizer::RasterInfo Screen::rasterize(
 		unsigned cycles_per_pixel, unsigned line_number, Pixel *target)
 {
-    uint8_t vline = (line_number - this->_startLine) / this->_setings.Scale;
+    uint8_t vline = (line_number - this->_startLine) / this->_settings.Scale;
     uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
-    uint16_t *colors = (uint16_t *)&this->_setings.Attributes[vline / 8 * this->_setings.TextColumns];
+    uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
     uint8_t *dest = target;
 
     for (int i = 0; i < ((this->_hResolution + 16) / 32); i++)
@@ -213,8 +113,8 @@ __attribute__((section(".ramcode")))
 	Rasterizer::RasterInfo result;
 	result.offset = 0;
 	result.length = this->_hResolution;
-	result.cycles_per_pixel = cycles_per_pixel * this->_setings.Scale;
-	result.repeat_lines = (unsigned) (this->_setings.Scale - 1);
+	result.cycles_per_pixel = cycles_per_pixel * this->_settings.Scale;
+	result.repeat_lines = (unsigned) (this->_settings.Scale - 1);
 	return result;
 }
 
@@ -225,7 +125,7 @@ void Screen::PrintChar(char c, uint16_t color)
 	case '\0': //null
 		break;
 	case '\n': //line feed
-		if (this->_cursor_y < this->_setings.TextRows - 1)
+		if (this->_cursor_y < this->_settings.TextRows - 1)
 		{
 			this->SetCursorPosition(0, this->_cursor_y + 1);
 		}
@@ -332,20 +232,20 @@ void Screen::DrawChar(const uint8_t *f, uint16_t x, uint16_t y, uint8_t c)
 void Screen::PrintCharAt(uint8_t x, uint8_t y, unsigned char c, uint16_t color)
 {
 	this->DrawChar(this->_font, x * 8, y * 8, c);
-	this->_setings.Attributes[y * this->_setings.TextColumns + x] = color;
+	this->_settings.Attributes[y * this->_settings.TextColumns + x] = color;
 }
 
 void Screen::CursorNext()
 {
 	uint8_t x = this->_cursor_x;
 	uint8_t y = this->_cursor_y;
-	if (x < this->_setings.TextColumns - 1)
+	if (x < this->_settings.TextColumns - 1)
 	{
 		x++;
 	}
 	else
 	{
-		if (y < this->_setings.TextRows - 1)
+		if (y < this->_settings.TextRows - 1)
 		{
 			x = 0;
 			y++;

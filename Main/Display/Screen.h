@@ -1,8 +1,8 @@
 #ifndef _SCREEN_H
 #define _SCREEN_H
 
-#include "VideoSettings.h"
-#include "font8x8.h"
+#include <Display/font8x8.h>
+#include <Display/VideoSettings.h>
 #include "m4vgalib/rasterizer.h"
 
 using namespace vga;
@@ -13,7 +13,18 @@ namespace Display
 class Screen: public Rasterizer
 {
 private:
-	VideoSettings _setings;
+    void Draw4(uint8_t *bitmap, uint16_t *colors, uint8_t *dest);
+    void PrintChar(char c, uint16_t color);
+    void PrintCharAt(uint8_t x, uint8_t y, unsigned char c, uint16_t color);
+    void DrawChar(const uint8_t *f, uint16_t x, uint16_t y, uint8_t c);
+    void Bitmap(uint16_t x, uint16_t y, const unsigned char *bmp,
+                uint16_t i, uint8_t width, uint8_t lines);
+    void CursorNext();
+
+protected:
+	virtual uint8_t* GetPixelPointer(uint8_t line);
+	virtual uint8_t* GetPixelPointer(uint8_t line, uint8_t character);
+	VideoSettings _settings;
 	uint16_t _startLine;
 
     uint16_t _hResolution;
@@ -31,16 +42,8 @@ private:
 //    uint8_t _bottomBorder;
 //    uint8_t _topBorder;
 
-    void Draw4(uint8_t *bitmap, uint16_t *colors, uint8_t *dest);
-    void PrintChar(char c, uint16_t color);
-    void PrintCharAt(uint8_t x, uint8_t y, unsigned char c, uint16_t color);
-    void DrawChar(const uint8_t *f, uint16_t x, uint16_t y, uint8_t c);
-    void Bitmap(uint16_t x, uint16_t y, const unsigned char *bmp,
-                uint16_t i, uint8_t width, uint8_t lines);
-    void CursorNext();
-
 public:
-	Screen(VideoSettings setings, uint16_t startLine);
+	Screen(VideoSettings settings, uint16_t startLine);
 
 	void Clear();
 	void SetFont(const uint8_t* font);
@@ -49,13 +52,6 @@ public:
 	void Print(const char* str);
 	void PrintAt(uint8_t x, uint8_t y, const char* str);
 	void PrintAlignRight(uint8_t x, uint8_t y, const char *str);
-
-	uint8_t* GetPixelPointer(uint8_t line);
-	uint8_t* GetPixelPointer(uint8_t line, uint8_t character);
-
-	void ShowSinclairScreenshot(const char *screenshot);
-	uint16_t FromSinclairColor(uint8_t sinclairColor);
-	uint8_t ToSinclairColor(uint16_t color);
 
 	RasterInfo rasterize(unsigned cycles_per_pixel, unsigned line_number,
 			Pixel *target) override;

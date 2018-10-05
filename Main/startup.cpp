@@ -8,7 +8,7 @@
 #include "etl/stm32f4xx/gpio.h"
 using namespace etl::stm32f4xx;
 
-#include "display/screen.h"
+#include <Display/Screen.h>
 using namespace Display;
 
 // Screen 48 x 37 characters
