@@ -16,15 +16,14 @@ Screen::Screen(VideoSettings settings, uint16_t startLine, uint16_t height)
 	this->_settings = settings;
 	this->_startLine = startLine;
 
-	this->_hResolution = this->_settings.TextColumns * 8;
-	this->_vResolution = this->_settings.TextRows * 8;
+	this->_hResolution = this->_settings.Timing->video_pixels / this->_settings.Scale;
+	this->_vResolution = height / this->_settings.Scale;
 
-	this->_horizontalBorder = ((this->_hResolution - this->_settings.Timing->video_pixels) / 2);
-    this->_verticalBorder = ((this->_vResolution - height) / 2);
+	this->_horizontalBorder = (this->_hResolution - this->_settings.TextColumns * 8) / 2;
+    this->_verticalBorder = (this->_vResolution - this->_settings.TextRows * 8) / 2;
 
-	this->_pixelCount = this->_settings.TextColumns * this->_vResolution;
-	this->_attributeCount = this->_settings.TextColumns
-			* this->_settings.TextRows;
+	this->_attributeCount = this->_settings.TextColumns * this->_settings.TextRows;
+	this->_pixelCount = this->_attributeCount * 8;
 }
 
 void Screen::Clear()
@@ -104,13 +103,15 @@ void Screen::PrintAlignRight(uint8_t x, uint8_t y, const char *str)
 }
 
 __attribute__((section(".ramcode")))
-      Rasterizer::RasterInfo Screen::rasterize(
+Rasterizer::RasterInfo Screen::rasterize(
 		unsigned cycles_per_pixel, unsigned line_number, Pixel *target)
 {
     uint8_t borderColor = *this->_settings.BorderColor;
 
-    if (line_number / this->_settings.Scale < this->_verticalBorder
-    	|| line_number / this->_settings.Scale >= (unsigned)(this->_vResolution - this->_verticalBorder))
+    unsigned scaledLine = (line_number - this->_startLine) / this->_settings.Scale;
+
+    if (scaledLine < this->_verticalBorder
+    	|| scaledLine >= (unsigned)(this->_vResolution - this->_verticalBorder))
     {
         memset(&target[0], borderColor, this->_hResolution);
     }
@@ -119,10 +120,10 @@ __attribute__((section(".ramcode")))
         // Border to the left
         memset(&target[0], borderColor, this->_horizontalBorder);
 
-        uint8_t vline = (line_number - this->_startLine) / this->_settings.Scale;
+        uint8_t vline = scaledLine - this->_verticalBorder;
         uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
         uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
-        uint8_t *dest = target;
+        uint8_t *dest = &target[this->_horizontalBorder];
 
         for (int i = 0; i < ((this->_hResolution + 16) / 32); i++)
         {
