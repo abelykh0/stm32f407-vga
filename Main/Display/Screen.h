@@ -26,8 +26,8 @@ private:
     uint8_t _verticalBorder;
 
 protected:
-	virtual uint8_t* GetPixelPointer(uint8_t line);
-	virtual uint8_t* GetPixelPointer(uint8_t line, uint8_t character);
+	virtual uint8_t* GetPixelPointer(uint16_t line);
+	virtual uint8_t* GetPixelPointer(uint16_t line, uint8_t character);
 	VideoSettings _settings;
 
     uint16_t _hResolution;

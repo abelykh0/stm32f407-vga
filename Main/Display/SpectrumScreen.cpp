@@ -14,7 +14,7 @@ SpectrumScreen::SpectrumScreen(VideoSettings settings, uint16_t startLine, uint1
 {
 }
 
-uint8_t* SpectrumScreen::GetPixelPointer(uint8_t line)
+uint8_t* SpectrumScreen::GetPixelPointer(uint16_t line)
 {
 	// ZX Sinclair addressing
 	// 00-00-00-Y7-Y6-Y2-Y1-Y0 Y5-Y4-Y3-x4-x3-x2-x1-x0
@@ -26,7 +26,7 @@ uint8_t* SpectrumScreen::GetPixelPointer(uint8_t line)
 	return &this->_settings.Pixels[y012 | y345 | y67];
 }
 
-uint8_t* SpectrumScreen::GetPixelPointer(uint8_t line, uint8_t character)
+uint8_t* SpectrumScreen::GetPixelPointer(uint16_t line, uint8_t character)
 {
 	character &= 0B00011111;
 	return this->GetPixelPointer(line) + character;

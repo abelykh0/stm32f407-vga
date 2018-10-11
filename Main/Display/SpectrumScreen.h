@@ -10,8 +10,8 @@ namespace Display
 class SpectrumScreen: public Screen
 {
 protected:
-	uint8_t* GetPixelPointer(uint8_t line) override;
-	uint8_t* GetPixelPointer(uint8_t line, uint8_t character) override;
+	uint8_t* GetPixelPointer(uint16_t line) override;
+	uint8_t* GetPixelPointer(uint16_t line, uint8_t character) override;
 
 public:
 	SpectrumScreen(VideoSettings settings);

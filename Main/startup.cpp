@@ -55,24 +55,24 @@ extern "C" void setup()
 
     // Display frame
     _screen.PrintAt(0, 0, "\xC9"); // ╔
-    //_screen.PrintAt(0, TEXT_COLUMNS - 1, "\xBB"); // ╗
-    //_screen.PrintAt(0, TEXT_ROWS - 1, "\xC8"); // ╚
-    //_screen.PrintAt(TEXT_COLUMNS - 1, TEXT_ROWS - 1, "\xBC"); // ╝
-//    for (int i = 1; i < TEXT_COLUMNS - 2; i++)
-//    {
-//        _screen.PrintAt(i, 1, "\x0CD"); // ═
-//        _screen.PrintAt(i, TEXT_ROWS - 1, "\x0CD"); // ═
-//    }
-//    for (int i = 1; i < TEXT_ROWS - 2; i++)
-//    {
-//        _screen.PrintAt(0, i, "\x0BA"); // ║
-//        _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x0BA"); // ║
-//    }
+    _screen.PrintAt(TEXT_COLUMNS - 1, 0, "\xBB"); // ╗
+    _screen.PrintAt(0, TEXT_ROWS - 1, "\xC8"); // ╚
+    _screen.PrintAt(TEXT_COLUMNS - 1, TEXT_ROWS - 1, "\xBC"); // ╝
+    for (int i = 1; i < TEXT_COLUMNS - 1; i++)
+    {
+        _screen.PrintAt(i, 0, "\x0CD"); // ═
+        _screen.PrintAt(i, TEXT_ROWS - 1, "\x0CD"); // ═
+    }
+    for (int i = 1; i < TEXT_ROWS - 1; i++)
+    {
+        _screen.PrintAt(0, i, "\x0BA"); // ║
+        _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x0BA"); // ║
+    }
 
     _screen.PrintAt(17, 18, "Hello, world!");
 
     // Initialize PS2 Keyboard
-    //Ps2_Initialize();
+    Ps2_Initialize();
 
     // Initialize GPIOA
     rcc.enable_clock(AhbPeripheral::gpioa);

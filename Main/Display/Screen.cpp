@@ -36,12 +36,12 @@ void Screen::Clear()
 	*this->_settings.BorderColor = (uint8_t) this->_attribute;
 }
 
-uint8_t* Screen::GetPixelPointer(uint8_t line)
+uint8_t* Screen::GetPixelPointer(uint16_t line)
 {
     return &this->_settings.Pixels[line * this->_settings.TextColumns];
 }
 
-uint8_t* Screen::GetPixelPointer(uint8_t line, uint8_t character)
+uint8_t* Screen::GetPixelPointer(uint16_t line, uint8_t character)
 {
 	return this->GetPixelPointer(line) + character;
 }
@@ -120,7 +120,7 @@ Rasterizer::RasterInfo Screen::rasterize(
         // Border to the left
         memset(&target[0], borderColor, this->_horizontalBorder);
 
-        uint8_t vline = scaledLine - this->_verticalBorder;
+        uint16_t vline = scaledLine - this->_verticalBorder;
         uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
         uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
         uint8_t *dest = &target[this->_horizontalBorder];
