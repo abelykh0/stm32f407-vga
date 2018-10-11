@@ -7,7 +7,9 @@
 
 #include "etl/stm32f4xx/gpio.h"
 #include <Display/Screen.h>
+#include <Display/SpectrumScreen.h>
 #include <Keyboard/ps2Keyboard.h>
+#include <resources/keyboard.h>
 
 using namespace etl::stm32f4xx;
 using namespace Display;
@@ -15,6 +17,10 @@ using namespace Display;
 // Screen 48 x 37 characters
 #define TEXT_COLUMNS 48
 #define TEXT_ROWS 37
+
+// Spectrum screen
+//#define TEXT_COLUMNS 32
+//#define TEXT_ROWS 24
 
 // Video memory
 uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
@@ -71,6 +77,8 @@ extern "C" void setup()
 
     _screen.PrintAt(17, 18, "Hello, world!");
 
+    //_screen.ShowScreenshot(spectrumKeyboard);
+
     // Initialize PS2 Keyboard
     Ps2_Initialize();
 
@@ -82,8 +90,8 @@ extern "C" void setup()
 extern "C" void loop()
 {
 	// Blink LED on PA6
-	gpioa.toggle(Gpio::p6);
+	//gpioa.toggle(Gpio::p6);
 
 	// Delay 1000 ms
-	HAL_Delay(1000);
+	//HAL_Delay(1000);
 }
