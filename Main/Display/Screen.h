@@ -31,6 +31,7 @@ protected:
 	VideoSettings _settings;
 
     uint16_t _hResolution;
+    uint16_t _hResolutionNoBorder;
     uint16_t _vResolution;
     uint16_t _pixelCount;
     uint16_t _attributeCount;

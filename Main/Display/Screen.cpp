@@ -16,10 +16,11 @@ Screen::Screen(VideoSettings settings, uint16_t startLine, uint16_t height)
 	this->_settings = settings;
 	this->_startLine = startLine;
 
+	this->_hResolutionNoBorder = this->_settings.TextColumns * 8;
 	this->_hResolution = this->_settings.Timing->video_pixels / this->_settings.Scale;
 	this->_vResolution = height / this->_settings.Scale;
 
-	this->_horizontalBorder = (this->_hResolution - this->_settings.TextColumns * 8) / 2;
+	this->_horizontalBorder = (this->_hResolution - this->_hResolutionNoBorder) / 2;
     this->_verticalBorder = (this->_vResolution - this->_settings.TextRows * 8) / 2;
 
 	this->_attributeCount = this->_settings.TextColumns * this->_settings.TextRows;
@@ -125,7 +126,7 @@ Rasterizer::RasterInfo Screen::rasterize(
         uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
         uint8_t *dest = &target[this->_horizontalBorder];
 
-        for (int i = 0; i < ((this->_hResolution + 16) / 32); i++)
+        for (int i = 0; i < ((this->_hResolutionNoBorder + 16) / 32); i++)
         {
             this->Draw4(bitmap, colors, dest);
             bitmap += 4; // characters

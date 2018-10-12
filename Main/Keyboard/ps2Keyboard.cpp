@@ -37,7 +37,7 @@ void Ps2_Initialize()
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     // DATA pin
-    GPIO_InitStruct.Pin = GPIO_PIN_15;
+    GPIO_InitStruct.Pin = GPIO_PIN_13;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -141,7 +141,7 @@ void vga_hblank_interrupt()
 {
     uint32_t gpioBits = GPIOB->IDR;
     uint8_t clkBit = (gpioBits & 0x4000) ? 1 : 0;
-    uint8_t dataBit = (gpioBits & 0x8000) ? 1 : 0;
+    uint8_t dataBit = (gpioBits & 0x2000) ? 1 : 0;
 
     if (clkBit == 0)
     {
