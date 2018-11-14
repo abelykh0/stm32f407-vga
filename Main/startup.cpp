@@ -75,7 +75,17 @@ extern "C" void setup()
         _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x0BA"); // ║
     }
 
-    _screen.PrintAt(17, 18, "Hello, world!");
+    _screen.PrintAt(17, 1, "Hello, world!");
+
+    for (int i = 0; i < 64; i++)
+    {
+    	char buf[20];
+    	sprintf(buf, BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(i));
+    	_screen.SetAttribute((i << 8) | 0x10);
+    	_screen.PrintAt(3 + (i % 6) * 7, 4 + (i / 6) * 2, "\xDF\xDF\xDF\xDF\xDF\xDF");
+    	_screen.SetAttribute(0x1510);
+    	_screen.PrintAt(3 + (i % 6) * 7, 3 + (i / 6) * 2, buf);
+    }
 
     //_screen.ShowScreenshot(spectrumKeyboard);
 
