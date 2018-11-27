@@ -1,45 +1,47 @@
 #include <Display/Screen.h>
 #include <string.h>
 #include "m4vgalib/vga.h"
+#include "draw4.h"
 
 namespace Display
 {
 
-Screen::Screen(VideoSettings settings)
+Screen::Screen(VideoSettings* settings)
 	: Screen(settings, 0,
-			settings.Timing->video_end_line - settings.Timing->video_start_line)
+			settings->Timing->video_end_line - settings->Timing->video_start_line)
 {
 }
 
-Screen::Screen(VideoSettings settings, uint16_t startLine, uint16_t height)
+Screen::Screen(VideoSettings* settings, uint16_t startLine, uint16_t height)
 {
-	this->_settings = settings;
+	this->Settings = settings;
 	this->_startLine = startLine;
+	this->_isCursorVisible = false;
 
-	this->_hResolutionNoBorder = this->_settings.TextColumns * 8;
-	this->_hResolution = this->_settings.Timing->video_pixels / this->_settings.Scale;
-	this->_vResolution = height / this->_settings.Scale;
+	this->_hResolutionNoBorder = this->Settings->TextColumns * 8;
+	this->_hResolution = this->Settings->Timing->video_pixels / this->Settings->HorizontalScale;
+	this->_vResolution = height / this->Settings->VerticalScale;
 
 	this->_horizontalBorder = (this->_hResolution - this->_hResolutionNoBorder) / 2;
-    this->_verticalBorder = (this->_vResolution - this->_settings.TextRows * 8) / 2;
+    this->_verticalBorder = (this->_vResolution - this->Settings->TextRows * 8) / 2;
 
-	this->_attributeCount = this->_settings.TextColumns * this->_settings.TextRows;
+	this->_attributeCount = this->Settings->TextColumns * this->Settings->TextRows;
 	this->_pixelCount = this->_attributeCount * 8;
 }
 
 void Screen::Clear()
 {
-	memset(this->_settings.Pixels, 0, this->_pixelCount);
+	memset(this->Settings->Pixels, 0, this->_pixelCount);
 	for (int i = 0; i < this->_attributeCount; i++)
 	{
-		this->_settings.Attributes[i] = this->_attribute;
+		this->Settings->Attributes[i] = this->_attribute;
 	}
-	*this->_settings.BorderColor = (uint8_t) this->_attribute;
+	*this->Settings->BorderColor = (uint8_t)this->_attribute;
 }
 
 uint8_t* Screen::GetPixelPointer(uint16_t line)
 {
-    return &this->_settings.Pixels[line * this->_settings.TextColumns];
+    return &this->Settings->Pixels[line * this->Settings->TextColumns];
 }
 
 uint8_t* Screen::GetPixelPointer(uint16_t line, uint8_t character)
@@ -49,7 +51,7 @@ uint8_t* Screen::GetPixelPointer(uint16_t line, uint8_t character)
 
 void Screen::SetFont(const uint8_t* font)
 {
-	this->_font = (uint8_t*) font;
+	this->_font = (uint8_t*)font;
 }
 
 void Screen::SetAttribute(uint16_t attribute)
@@ -64,18 +66,46 @@ void Screen::SetCursorPosition(uint8_t x, uint8_t y)
 		return;
 	}
 
-	if (x >= this->_settings.TextColumns)
+	if (x >= this->Settings->TextColumns)
 	{
-		x = this->_settings.TextColumns - 1;
+		x = this->Settings->TextColumns - 1;
 	}
 
-	if (y >= this->_settings.TextRows)
+	if (y >= this->Settings->TextRows)
 	{
-		y = this->_settings.TextRows - 1;
+		y = this->Settings->TextRows - 1;
 	}
+
+    if (this->_isCursorVisible)
+    {
+    	this->InvertColor();
+    }
 
 	this->_cursor_x = x;
 	this->_cursor_y = y;
+
+    if (this->_isCursorVisible)
+    {
+    	this->InvertColor();
+    }
+}
+
+void Screen::ShowCursor()
+{
+    if (!this->_isCursorVisible)
+    {
+    	this->_isCursorVisible = true;
+    	this->InvertColor();
+    }
+}
+
+void Screen::HideCursor()
+{
+    if (this->_isCursorVisible)
+    {
+    	this->_isCursorVisible = false;
+    	this->InvertColor();
+    }
 }
 
 void Screen::Print(const char* str)
@@ -97,9 +127,15 @@ void Screen::PrintAt(uint8_t x, uint8_t y, const char* str)
     this->Print(str);
 }
 
-void Screen::PrintAlignRight(uint8_t x, uint8_t y, const char *str)
+void Screen::PrintAlignRight(uint8_t y, const char *str)
 {
-    uint8_t leftX = x - strlen(str);
+    uint8_t leftX = this->Settings->TextColumns - strlen(str);
+    this->PrintAt(leftX, y, str);
+}
+
+void Screen::PrintAlignCenter(uint8_t y, const char *str)
+{
+    uint8_t leftX = (this->Settings->TextColumns - strlen(str)) / 2;
     this->PrintAt(leftX, y, str);
 }
 
@@ -107,9 +143,13 @@ __attribute__((section(".ramcode")))
 Rasterizer::RasterInfo Screen::rasterize(
 		unsigned cycles_per_pixel, unsigned line_number, Pixel *target)
 {
-    uint8_t borderColor = *this->_settings.BorderColor;
+    uint8_t borderColor = *this->Settings->BorderColor;
 
-    unsigned scaledLine = (line_number - this->_startLine) / this->_settings.Scale;
+    unsigned scaledLine = (line_number - this->_startLine) / this->Settings->VerticalScale;
+    if (scaledLine == 0)
+    {
+    	this->_frames++;
+    }
 
     if (scaledLine < this->_verticalBorder
     	|| scaledLine >= (unsigned)(this->_vResolution - this->_verticalBorder))
@@ -123,12 +163,12 @@ Rasterizer::RasterInfo Screen::rasterize(
 
         uint16_t vline = scaledLine - this->_verticalBorder;
         uint8_t *bitmap = (uint8_t *)this->GetPixelPointer(vline);
-        uint16_t *colors = (uint16_t *)&this->_settings.Attributes[vline / 8 * this->_settings.TextColumns];
+        uint16_t *colors = (uint16_t *)&this->Settings->Attributes[vline / 8 * this->Settings->TextColumns];
         uint8_t *dest = &target[this->_horizontalBorder];
 
         for (int i = 0; i < ((this->_hResolutionNoBorder + 16) / 32); i++)
         {
-            this->Draw4(bitmap, colors, dest);
+            Draw4(bitmap, colors, dest);
             bitmap += 4; // characters
             colors += 4; // attributes
             dest += 32;  // pixels
@@ -141,8 +181,8 @@ Rasterizer::RasterInfo Screen::rasterize(
 	Rasterizer::RasterInfo result;
 	result.offset = 0;
 	result.length = this->_hResolution;
-	result.cycles_per_pixel = cycles_per_pixel * this->_settings.Scale;
-	result.repeat_lines = (unsigned) (this->_settings.Scale - 1);
+	result.cycles_per_pixel = cycles_per_pixel * this->Settings->HorizontalScale;
+	result.repeat_lines = (unsigned) (this->Settings->VerticalScale - 1);
 	return result;
 }
 
@@ -153,12 +193,12 @@ void Screen::PrintChar(char c, uint16_t color)
 	case '\0': //null
 		break;
 	case '\n': //line feed
-		if (this->_cursor_y < this->_settings.TextRows - 1)
+		if (this->_cursor_y < this->Settings->TextRows - 1)
 		{
 			this->SetCursorPosition(0, this->_cursor_y + 1);
 		}
 		break;
-	case 8: //backspace
+	case '\b': //backspace
 		if (this->_cursor_x > 0)
 		{
 			this->PrintCharAt(this->_cursor_x - 1, this->_cursor_y, ' ', color);
@@ -260,20 +300,23 @@ void Screen::DrawChar(const uint8_t *f, uint16_t x, uint16_t y, uint8_t c)
 void Screen::PrintCharAt(uint8_t x, uint8_t y, unsigned char c, uint16_t color)
 {
 	this->DrawChar(this->_font, x * 8, y * 8, c);
-	this->_settings.Attributes[y * this->_settings.TextColumns + x] = color;
+	if (this->_attributeCount > 0)
+	{
+		this->Settings->Attributes[y * this->Settings->TextColumns + x] = color;
+	}
 }
 
 void Screen::CursorNext()
 {
 	uint8_t x = this->_cursor_x;
 	uint8_t y = this->_cursor_y;
-	if (x < this->_settings.TextColumns - 1)
+	if (x < this->Settings->TextColumns - 1)
 	{
 		x++;
 	}
 	else
 	{
-		if (y < this->_settings.TextRows - 1)
+		if (y < this->Settings->TextRows - 1)
 		{
 			x = 0;
 			y++;
@@ -282,69 +325,11 @@ void Screen::CursorNext()
 	this->SetCursorPosition(x, y);
 }
 
-void Screen::Draw4(uint8_t *bitmap, uint16_t *colors, uint8_t *dest)
+void Screen::InvertColor()
 {
-	__asm__ volatile(
-			"  ldr r1, [%[pix]], #4 \n\t" // pixels for characters 0..3
-			"  ldr r3, [%[col]], #4 \n\t"// colors for characters 0..1
-
-			// character #0
-			"  ror r1, r1, #4    \n\t"// pixels >> 4
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".rept 7 \n\t"
-			"  ror r1, r1, #31   \n\t"// pixels << 1
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".endr   \n\t"
-
-			// character #1
-			"  ror r3, r3, #16   \n\t"// colors
-			"  ror r1, r1, #15   \n\t"// pixels >> 15
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".rept 7 \n\t"
-			"  ror r1, r1, #31   \n\t"// pixels << 1
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".endr   \n\t"
-
-			"  ldr r3, [%[col]], #4 \n\t"// colors for for characters 2..3
-
-			// character #2
-			"  ror r1, r1, #15   \n\t"// pixels >> 15
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".rept 7 \n\t"
-			"  ror r1, r1, #31   \n\t"// pixels << 1
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".endr   \n\t"
-
-			// character #3
-			"  ror r3, r3, #16   \n\t"// colors
-			"  ror r1, r1, #15   \n\t"// pixels >> 15
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".rept 7 \n\t"
-			"  ror r1, r1, #31   \n\t"// pixels << 1
-			"  and r0, r1, #8    \n\t"
-			"  lsr r0, r3, r0    \n\t"
-			"  strb r0, [%[odr]], #1 \n\t"
-			".endr   \n\t"
-
-			:
-			: [pix] "r"(bitmap),
-			[col] "r"(colors),
-			[odr] "r"(dest)
-			: "r0", "r1", "r2", "r3");
+    uint16_t originalColor = this->Settings->Attributes[this->_cursor_y * this->Settings->TextColumns + this->_cursor_x];
+    uint16_t newColor = __builtin_bswap16(originalColor);
+    this->Settings->Attributes[this->_cursor_y * this->Settings->TextColumns + this->_cursor_x] = newColor;
 }
 
 }

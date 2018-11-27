@@ -12,7 +12,8 @@ class VideoSettings
   public:
 	const vga::Timing* Timing;
 
-	uint8_t Scale;
+	uint8_t HorizontalScale;
+	uint8_t VerticalScale;
 
 	// text resolution
 	uint8_t TextColumns;

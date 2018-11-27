@@ -7,20 +7,18 @@
 
 #include "etl/stm32f4xx/gpio.h"
 #include <Display/Screen.h>
-#include <Display/SpectrumScreen.h>
 #include <Keyboard/ps2Keyboard.h>
 #include <resources/keyboard.h>
 
 using namespace etl::stm32f4xx;
 using namespace Display;
 
+uint32_t _frames = 0;
+extern RTC_HandleTypeDef hrtc;
+
 // Screen 48 x 37 characters
 #define TEXT_COLUMNS 48
 #define TEXT_ROWS 37
-
-// Spectrum screen
-//#define TEXT_COLUMNS 32
-//#define TEXT_ROWS 24
 
 // Video memory
 uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
@@ -33,12 +31,11 @@ VideoSettings _videoSettings {
 	// timing_vesa_640x480_60hz
 	// timing_800x600_56hz
 	&vga::timing_800x600_56hz, // Timing
-	2,  // Scale
-
+	2, 2,  // Scale
 	TEXT_COLUMNS, TEXT_ROWS,
 	_pixels, _attributes, &_borderColor
 };
-Screen _screen(_videoSettings);
+Screen _screen(&_videoSettings);
 vga::Band _band {
 	&_screen,
 	(unsigned int)(_videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line),
@@ -75,33 +72,38 @@ extern "C" void setup()
         _screen.PrintAt(TEXT_COLUMNS - 1, i, "\x0BA"); // ║
     }
 
-    _screen.PrintAt(17, 1, "Hello, world!");
+    _screen.PrintAt(17, 2, "Hello, world!");
 
     for (int i = 0; i < 64; i++)
     {
     	char buf[20];
     	sprintf(buf, BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(i));
     	_screen.SetAttribute((i << 8) | 0x10);
-    	_screen.PrintAt(3 + (i % 6) * 7, 4 + (i / 6) * 2, "\xDF\xDF\xDF\xDF\xDF\xDF");
+    	_screen.PrintAt(3 + (i % 6) * 7, 6 + (i / 6) * 2, "\xDF\xDF\xDF\xDF\xDF\xDF");
     	_screen.SetAttribute(0x1510);
-    	_screen.PrintAt(3 + (i % 6) * 7, 3 + (i / 6) * 2, buf);
+    	_screen.PrintAt(3 + (i % 6) * 7, 5 + (i / 6) * 2, buf);
     }
-
-    //_screen.ShowScreenshot(spectrumKeyboard);
 
     // Initialize PS2 Keyboard
     Ps2_Initialize();
-
-    // Initialize GPIOA
-    rcc.enable_clock(AhbPeripheral::gpioa);
-    gpioa.set_mode(Gpio::p6, Gpio::Mode::gpio);
 }
 
 extern "C" void loop()
 {
-	// Blink LED on PA6
-	//gpioa.toggle(Gpio::p6);
+	// Display current date and time
 
-	// Delay 1000 ms
-	//HAL_Delay(1000);
+	RTC_TimeTypeDef time;
+	RTC_DateTypeDef date;
+	if (_screen._frames > _frames)
+	{
+		char formattedDateTime[50];
+		HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+		HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+		sprintf(formattedDateTime, "%04d-%02d-%02d %02d:%02d:%02d",
+				date.Year + 2000, date.Month, date.Date,
+				time.Hours, time.Minutes, time.Seconds);
+		_screen.SetAttribute(0x3F10);
+		_screen.PrintAlignCenter(33, formattedDateTime);
+		_frames = _screen._frames + 5;
+	}
 }

@@ -95,7 +95,8 @@
 /* first is special case for PRTSCR not always used so ignored by decoding */
 #define KEY_IGNORE   0xE012
 #define KEY_PRTSCR   0xE07C
-#define KEY_RIGHTCONTROL 0XE014
+#define KEY_RIGHTCONTROL 0xE014
+#define KEY_RIGHTALT 0xE011
 /* Sometimes called windows key */
 #define KEY_L_GUI    0xE01F
 #define KEY_R_GUI    0xE027
@@ -132,8 +133,23 @@ extern "C" {
 
 #include <stdint.h>
 
+extern uint32_t ModifierKeyState;
+
 void Ps2_Initialize();
 int32_t Ps2_GetScancode();
+char Ps2_ConvertScancode(int32_t scanCode);
+
+enum ModifierKeys
+{
+	LeftShift = 0x0001,
+	RightShift = 0x0002,
+	LeftControl = 0x0004,
+	RightControl = 0x0008,
+	LeftWindows = 0x0010,
+	RightWindows = 0x0020,
+	LeftAlt = 0x0040,
+	RightAlt = 0x0080
+};
 
 #ifdef __cplusplus
 }
