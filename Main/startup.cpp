@@ -7,8 +7,8 @@
 
 #include "etl/stm32f4xx/gpio.h"
 #include <Display/Screen.h>
+#include <Display/StatusScreen.h>
 #include <Keyboard/ps2Keyboard.h>
-#include <resources/keyboard.h>
 
 using namespace etl::stm32f4xx;
 using namespace Display;
@@ -16,33 +16,36 @@ using namespace Display;
 uint32_t _frames = 0;
 extern RTC_HandleTypeDef hrtc;
 
-// Screen 48 x 37 characters
-#define TEXT_COLUMNS 48
 #define TEXT_ROWS 37
+#define TEXT_COLUMNS 50
+//#define TEXT_COLUMNS 100
 
 // Video memory
 uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
-uint16_t _attributes[TEXT_COLUMNS * TEXT_ROWS];
 uint8_t _borderColor;
+uint16_t _attributes[TEXT_COLUMNS * TEXT_ROWS];
+//uint8_t _palette[] = { 0B00000000, 0B00001100 };
+//uint16_t* _attributes = (uint16_t*)_palette;
 
 // Define single rasterizer band
 VideoSettings _videoSettings {
 	// timing_vesa_800x600_60hz
 	// timing_vesa_640x480_60hz
 	// timing_800x600_56hz
-	&vga::timing_800x600_56hz, // Timing
+	&vga::timing_vesa_800x600_60hz, // Timing
 	2, 2,  // Scale
 	TEXT_COLUMNS, TEXT_ROWS,
 	_pixels, _attributes, &_borderColor
 };
 Screen _screen(&_videoSettings);
+//StatusScreen _screen(&_videoSettings, 0, _videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line);
 vga::Band _band {
 	&_screen,
 	(unsigned int)(_videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line),
 	nullptr
 };
 
-extern "C" void setup()
+extern "C" void initialize()
 {
 	vga::init();
 
@@ -51,7 +54,10 @@ extern "C" void setup()
 
     // Inform HAL that the CPU clock speed changed
     SystemCoreClockUpdate();
+}
 
+extern "C" void setup()
+{
     _screen.Clear();
     vga::configure_band_list(&_band);
     vga::video_on();

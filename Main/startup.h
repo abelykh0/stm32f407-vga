@@ -13,6 +13,8 @@
   (byte & 0x04 ? '1' : '0'), \
   (byte & 0x02 ? '1' : '0'), \
   (byte & 0x01 ? '1' : '0')
+
+ void initialize();
  void setup();
  void loop();
 
