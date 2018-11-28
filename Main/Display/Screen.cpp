@@ -306,6 +306,11 @@ void Screen::PrintCharAt(uint8_t x, uint8_t y, unsigned char c, uint16_t color)
 	}
 }
 
+void Screen::PrintCharAt(uint8_t x, uint8_t y, unsigned char c)
+{
+	this->PrintCharAt(x, y, c, this->_attribute);
+}
+
 void Screen::CursorNext()
 {
 	uint8_t x = this->_cursor_x;

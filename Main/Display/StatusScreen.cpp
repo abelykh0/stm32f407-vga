@@ -10,7 +10,6 @@ namespace Display
 StatusScreen::StatusScreen(VideoSettings* settings, uint16_t startLine, uint16_t height)
 	: Screen(settings, startLine, height)
 {
-	this->_verticalBorder = 0;
 	this->_attributeCount = 0;
 }
 
@@ -19,6 +18,7 @@ void StatusScreen::DrawChar(const uint8_t *f, uint16_t x, uint16_t y, uint8_t c)
 	c -= *(f + 2);
 	uint8_t charDefinition[8];
 	memcpy(charDefinition, f + (c * *(f + 1)) + 3, 8);
+
 	uint32_t* w = (uint32_t*)charDefinition;
 	*w = __REV(*w);
 	*w = __RBIT(*w);
@@ -65,7 +65,7 @@ Rasterizer::RasterInfo StatusScreen::rasterize(
 		}
 		result.repeat_lines = this->_verticalBorder * 2 - 1;
 	}
-	else if (this->_verticalBorder > 0 && scaledLine == (unsigned)(this->_vResolution - this->_verticalBorder - 1))
+	else if (this->_verticalBorder > 0 && scaledLine == (unsigned)(this->_vResolution - this->_verticalBorder))
 	{
 		uint32_t fill = borderColor << 8 | borderColor;
 		fill |= fill << 16;

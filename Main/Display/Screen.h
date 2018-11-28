@@ -58,6 +58,7 @@ public:
 	void PrintAt(uint8_t x, uint8_t y, const char* str);
 	void PrintAlignRight(uint8_t y, const char *str);
 	void PrintAlignCenter(uint8_t y, const char *str);
+    void PrintCharAt(uint8_t x, uint8_t y, unsigned char c);
 
 	virtual RasterInfo rasterize(unsigned cycles_per_pixel, unsigned line_number,
 			Pixel *target) override;

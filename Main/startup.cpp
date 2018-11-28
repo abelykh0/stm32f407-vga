@@ -16,9 +16,10 @@ using namespace Display;
 uint32_t _frames = 0;
 extern RTC_HandleTypeDef hrtc;
 
-#define TEXT_ROWS 37
 #define TEXT_COLUMNS 50
-//#define TEXT_COLUMNS 100
+#define TEXT_ROWS 37
+//#define TEXT_COLUMNS 80
+//#define TEXT_ROWS 36
 
 // Video memory
 uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
@@ -80,14 +81,21 @@ extern "C" void setup()
 
     _screen.PrintAt(17, 2, "Hello, world!");
 
+	char buf[20];
+
     for (int i = 0; i < 64; i++)
     {
-    	char buf[20];
     	sprintf(buf, BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(i));
     	_screen.SetAttribute((i << 8) | 0x10);
-    	_screen.PrintAt(3 + (i % 6) * 7, 6 + (i / 6) * 2, "\xDF\xDF\xDF\xDF\xDF\xDF");
+    	_screen.PrintAt(4 + (i % 6) * 7, 5 + (i / 6) * 2, "\xDF\xDF\xDF\xDF\xDF\xDF");
     	_screen.SetAttribute(0x1510);
-    	_screen.PrintAt(3 + (i % 6) * 7, 5 + (i / 6) * 2, buf);
+    	_screen.PrintAt(4 + (i % 6) * 7, 4 + (i / 6) * 2, buf);
+    }
+
+	_screen.SetAttribute(0x3F10);
+    for (uint16_t character = 1; character <= 255; character++)
+    {
+		_screen.PrintCharAt(character % 48 + 1, character / 48 + 27, character);
     }
 
     // Initialize PS2 Keyboard
@@ -108,8 +116,7 @@ extern "C" void loop()
 		sprintf(formattedDateTime, "%04d-%02d-%02d %02d:%02d:%02d",
 				date.Year + 2000, date.Month, date.Date,
 				time.Hours, time.Minutes, time.Seconds);
-		_screen.SetAttribute(0x3F10);
-		_screen.PrintAlignCenter(33, formattedDateTime);
+		_screen.PrintAlignCenter(34, formattedDateTime);
 		_frames = _screen._frames + 5;
 	}
 }
