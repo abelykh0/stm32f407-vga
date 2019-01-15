@@ -13,7 +13,7 @@
 using namespace etl::stm32f4xx;
 using namespace Display;
 
-uint32_t _frames = 0;
+static uint32_t _frames = 0;
 extern RTC_HandleTypeDef hrtc;
 
 #define TEXT_COLUMNS 50
@@ -22,9 +22,9 @@ extern RTC_HandleTypeDef hrtc;
 //#define TEXT_ROWS 36
 
 // Video memory
-uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
-uint8_t _borderColor;
-uint16_t _attributes[TEXT_COLUMNS * TEXT_ROWS];
+static uint8_t _pixels[TEXT_COLUMNS * 8 * TEXT_ROWS];
+static uint8_t _borderColor;
+static uint16_t _attributes[TEXT_COLUMNS * TEXT_ROWS];
 //uint8_t _palette[] = { 0B00000000, 0B00001100 };
 //uint16_t* _attributes = (uint16_t*)_palette;
 
@@ -38,9 +38,9 @@ VideoSettings _videoSettings {
 	TEXT_COLUMNS, TEXT_ROWS,
 	_pixels, _attributes, &_borderColor
 };
-Screen _screen(&_videoSettings);
+static Screen _screen(&_videoSettings);
 //StatusScreen _screen(&_videoSettings, 0, _videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line);
-vga::Band _band {
+static vga::Band _band {
 	&_screen,
 	(unsigned int)(_videoSettings.Timing->video_end_line - _videoSettings.Timing->video_start_line),
 	nullptr

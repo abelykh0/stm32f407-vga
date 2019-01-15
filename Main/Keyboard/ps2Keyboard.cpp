@@ -21,12 +21,12 @@ typedef enum
     STOP
 } ps2_read_status;
 
-ps2_read_status ps2_status;
-int32_t kb_data;
+static ps2_read_status ps2_status;
+static int32_t kb_data;
 
-uint8_t lastClk = 1;
-uint8_t lastData;
-volatile uint8_t _parity;
+static uint8_t lastClk = 1;
+static uint8_t lastData;
+static volatile uint8_t _parity;
 
 void Ps2_Initialize()
 {
