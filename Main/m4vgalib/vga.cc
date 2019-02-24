@@ -185,7 +185,7 @@ void init() {
   syscfg.write_cmpcr(syscfg.read_cmpcr().with_cmp_pd(true));
 
   // Turn a bunch of stuff on.
-  rcc.enable_clock(AhbPeripheral::gpiod);  // Sync signals
+  rcc.enable_clock(AhbPeripheral::SYNC_GPIO);  // Sync signals
   rcc.enable_clock(AhbPeripheral::VIDEO_GPIO);  // Video
   rcc.enable_clock(AhbPeripheral::dma2);
 
