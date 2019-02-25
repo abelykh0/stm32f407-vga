@@ -295,7 +295,13 @@ static void configure_h_timer(Timing const &timing,
   tim.write_psc(apb_cycles_per_pixel - 1);
 
   tim.write_arr(timing.line_pixels - 1);
+
+#ifdef BOARD2
+  tim.write_ccr1(timing.sync_pixels);
+#else
   tim.write_ccr4(timing.sync_pixels);
+#endif
+
   tim.write_ccr2(timing.sync_pixels
                  + timing.back_porch_pixels - timing.video_lead);
   tim.write_ccr3(timing.sync_pixels
