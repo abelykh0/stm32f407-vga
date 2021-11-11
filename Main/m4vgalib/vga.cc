@@ -535,7 +535,7 @@ static void end_of_active_video() {
   current_line = next_line;
 }
 
-void default_hblank_interrupt();  // decl hack
+void default_hblank_interrupt() __attribute__((weak));  // decl hack
 RAM_CODE void default_hblank_interrupt() {}
 
 
