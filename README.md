@@ -2,7 +2,7 @@
 VGA demo on Black F407VET6 (using STM32F407VE microcontroller) 
 
 ## What it can do
-It displays "Hello, world!" on a VGA connected to a Black F407VET6 board. It also display 64 supported colors.
+It displays "Hello, world!" on a VGA connected to a [Black F407VET6](https://stm32-base.org/boards/STM32F407VET6-STM32-F4VE-V2.0) board. It also display 64 supported colors.
 
 ![Screenshot](https://raw.githubusercontent.com/abelykh0/stm32f407-vga/master/doc/Screenshot.jpg)
 
