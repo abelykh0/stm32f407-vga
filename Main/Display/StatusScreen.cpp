@@ -1,8 +1,8 @@
 #include "StatusScreen.h"
 #include <string.h>
 #include <stm32f407xx.h>
-#include "m4vgalib/vga.h"
-#include "m4vgalib/rast/unpack_1bpp.h"
+#include "vga/vga.h"
+#include "vga/rast/unpack_1bpp.h"
 
 namespace Display
 {

@@ -1,6 +1,6 @@
 #include <Display/Screen.h>
 #include <string.h>
-#include "m4vgalib/vga.h"
+#include "vga/vga.h"
 #include "draw4.h"
 
 namespace Display

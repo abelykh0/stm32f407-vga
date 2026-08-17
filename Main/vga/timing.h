@@ -3,9 +3,27 @@
 
 #include <cstdint>
 
-#include "etl/stm32f4xx/rcc.h"
-
 namespace vga {
+
+/*
+ * Describes the PLL/bus configuration needed to derive a given pixel clock
+ * from the board's 8 MHz crystal.  Mirrors the fields of HAL's
+ * RCC_OscInitTypeDef/RCC_ClkInitTypeDef, expressed as plain divisors so that
+ * Timing tables can specify them declaratively.
+ */
+struct ClockConfig {
+  std::uint32_t crystal_hz;       // External crystal frequency.
+  std::uint32_t crystal_divisor;  // PLLM: divides crystal down to ~2MHz.
+  std::uint32_t vco_multiplier;   // PLLN: multiplies up to the VCO frequency.
+  std::uint32_t general_divisor;  // PLLP: divides VCO down to the CPU clock.
+  std::uint32_t pll48_divisor;    // PLLQ: divides VCO down to ~48MHz.
+
+  std::uint32_t ahb_divisor;   // HPRE
+  std::uint32_t apb1_divisor;  // PPRE1
+  std::uint32_t apb2_divisor;  // PPRE2
+
+  std::uint32_t flash_latency;  // Flash wait states at this CPU frequency.
+};
 
 /*
  * Describes the horizontal and vertical timing for a display mode, including
@@ -22,7 +40,7 @@ struct Timing {
    * (below), making the CPU clock configuration an integral part of the video
    * timing.
    */
-  etl::stm32f4xx::ClockConfig clock_config;
+  ClockConfig clock_config;
 
   /*
    * Number of AHB cycles per pixel clock cycle.  Different scanout strategies

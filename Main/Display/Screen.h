@@ -3,7 +3,7 @@
 
 #include <Display/font8x8.h>
 #include <Display/VideoSettings.h>
-#include "m4vgalib/rasterizer.h"
+#include "vga/rasterizer.h"
 
 using namespace vga;
 

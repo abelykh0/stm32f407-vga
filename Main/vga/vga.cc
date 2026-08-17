@@ -1,51 +1,22 @@
 #include "vga.h"
 
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
-
-#include "etl/assert.h"
-#include "etl/attribute_macros.h"
-#include "etl/prediction.h"
-
-#include "etl/armv7m/exceptions.h"
-#include "etl/armv7m/exception_table.h"
-#include "etl/armv7m/instructions.h"
-#include "etl/armv7m/scb.h"
-#include "etl/armv7m/types.h"
-
-#include "etl/stm32f4xx/adv_timer.h"
-#include "etl/stm32f4xx/ahb.h"
-#include "etl/stm32f4xx/apb.h"
-#include "etl/stm32f4xx/dbg.h"
-#include "etl/stm32f4xx/dma.h"
-#include "etl/stm32f4xx/flash.h"
-#include "etl/stm32f4xx/gpio.h"
-#include "etl/stm32f4xx/gp_timer.h"
-#include "etl/stm32f4xx/interrupts.h"
-#include "etl/stm32f4xx/interrupt_table.h"
-#include "etl/stm32f4xx/rcc.h"
-#include "etl/stm32f4xx/syscfg.h"
 
 #include "vgaConfig.h"
 #include "copy_words.h"
 #include "rasterizer.h"
 #include "timing.h"
 
-using std::size_t;
+#define IN_SCAN_RAM  __attribute__((section(".vga_scan_ram")))
+#define IN_LOCAL_RAM __attribute__((section(".vga_local_ram")))
 
-using etl::armv7m::Byte;
-using etl::armv7m::HalfWord;
-using etl::armv7m::scb;
-using etl::armv7m::Scb;
-using etl::armv7m::Word;
+#define RAM_CODE __attribute__((section(".ramcode")))
 
-using namespace etl::stm32f4xx;
-
-#define IN_SCAN_RAM ETL_SECTION(".vga_scan_ram")
-#define IN_LOCAL_RAM ETL_SECTION(".vga_local_ram")
-
-#define RAM_CODE ETL_SECTION(".ramcode")
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
 
 namespace vga {
 
@@ -66,13 +37,12 @@ static constexpr unsigned
   // rasterizers can scribble slightly outside the lines -- in words.
   extra_pad_words = 4;
 
-// Common fields used in scanout DMA transfer settings.
-static constexpr auto dma_xfer_common = Dma::Stream::cr_value_t()
-  .with_chsel(6)  // for TIM1_UP
-  .with_pl(Dma::Stream::cr_value_t::pl_t::very_high)
-  .with_pburst(Dma::Stream::BurstSize::single)
-  .with_mburst(Dma::Stream::BurstSize::single)
-  .with_en(true);
+// Common fields used in scanout DMA transfer settings: channel 6 (TIM1_UP),
+// very-high priority, single-beat bursts, enabled.
+static constexpr std::uint32_t dma_xfer_common_cr =
+    (6UL << DMA_SxCR_CHSEL_Pos)
+  | DMA_SxCR_PL_1 | DMA_SxCR_PL_0
+  | DMA_SxCR_EN;
 
 
 /*******************************************************************************
@@ -116,8 +86,8 @@ static State volatile state;
 // It contains an extra word's worth of pixels to ensure that we can follow
 // every line with an extra transfer to blank the outputs.  The extra pixels
 // are blanked after the rasterizer returns.
-alignas(Word) IN_SCAN_RAM
-static Pixel scan_buffer[max_pixels_per_line + sizeof(Word)];
+alignas(std::uint32_t) IN_SCAN_RAM
+static Pixel scan_buffer[max_pixels_per_line + sizeof(std::uint32_t)];
 
 // This is the working buffer, the target of the Rasterizer.  Its contents will
 // be copied to the scan_buffer during hblank if needed.  It need not be in
@@ -128,11 +98,11 @@ static Pixel scan_buffer[max_pixels_per_line + sizeof(Word)];
 // It has invisible padding at either end because it makes certain tile
 // scrolling algorithms simpler to implement if they need not color precisely
 // within the lines.
-alignas(Word) IN_LOCAL_RAM
+alignas(std::uint32_t) IN_LOCAL_RAM
 static struct {
-  Word left_pad[extra_pad_words];
+  std::uint32_t left_pad[extra_pad_words];
   Pixel buffer[max_pixels_per_line];
-  Word right_pad[extra_pad_words];
+  std::uint32_t right_pad[extra_pad_words];
 } working;
 
 // A description of the contents of the working buffer, produced by the last
@@ -149,10 +119,10 @@ static Rasterizer::RasterInfo working_buffer_shape;
 // priority, it need not be volatile or atomic.
 static bool scan_buffer_needs_update;
 
-// A pre-built control register word to be used to start the next DMA transfer.
+// A pre-built DMA_SxCR value to be used to start the next DMA transfer.
 // This is set up during hblank based on the working_buffer_shape, and consumed
 // at start of active video.
-static Dma::Stream::cr_value_t next_dma_xfer;
+static std::uint32_t next_dma_xfer_cr;
 IN_LOCAL_RAM
 static bool next_use_timer;
 
@@ -176,172 +146,216 @@ static std::atomic<bool> band_list_taken{false};
 
 
 /*******************************************************************************
+ * Clock configuration.
+ */
+
+static std::uint32_t ahb_prescaler(std::uint32_t divisor) {
+  switch (divisor) {
+    case 1:   return RCC_SYSCLK_DIV1;
+    case 2:   return RCC_SYSCLK_DIV2;
+    case 4:   return RCC_SYSCLK_DIV4;
+    case 8:   return RCC_SYSCLK_DIV8;
+    case 16:  return RCC_SYSCLK_DIV16;
+    case 64:  return RCC_SYSCLK_DIV64;
+    case 128: return RCC_SYSCLK_DIV128;
+    case 256: return RCC_SYSCLK_DIV256;
+    default:  return RCC_SYSCLK_DIV512;
+  }
+}
+
+static std::uint32_t apb_prescaler(std::uint32_t divisor) {
+  switch (divisor) {
+    case 1:  return RCC_HCLK_DIV1;
+    case 2:  return RCC_HCLK_DIV2;
+    case 4:  return RCC_HCLK_DIV4;
+    case 8:  return RCC_HCLK_DIV8;
+    default: return RCC_HCLK_DIV16;
+  }
+}
+
+static std::uint32_t pllp_bits(std::uint32_t divisor) {
+  switch (divisor) {
+    case 2:  return RCC_PLLP_DIV2;
+    case 4:  return RCC_PLLP_DIV4;
+    case 6:  return RCC_PLLP_DIV6;
+    default: return RCC_PLLP_DIV8;
+  }
+}
+
+// Switches the CPU/bus clocks to match cfg, going by way of the internal HSI
+// oscillator so that the main PLL can be safely reprogrammed.
+static void configure_clocks(ClockConfig const &cfg) {
+  // Step down to the 16 MHz internal oscillator; this frees up the PLL.
+  RCC_OscInitTypeDef hsi_osc = {};
+  hsi_osc.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  hsi_osc.HSIState = RCC_HSI_ON;
+  hsi_osc.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  hsi_osc.PLL.PLLState = RCC_PLL_NONE;
+  HAL_RCC_OscConfig(&hsi_osc);
+
+  RCC_ClkInitTypeDef to_hsi = {};
+  to_hsi.ClockType = RCC_CLOCKTYPE_SYSCLK;
+  to_hsi.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  HAL_RCC_ClockConfig(&to_hsi, (std::uint32_t) cfg.flash_latency);
+
+  // Reprogram and restart the main PLL from the crystal.
+  RCC_OscInitTypeDef pll_osc = {};
+  pll_osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  pll_osc.HSEState = RCC_HSE_ON;
+  pll_osc.PLL.PLLState = RCC_PLL_ON;
+  pll_osc.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  pll_osc.PLL.PLLM = cfg.crystal_divisor;
+  pll_osc.PLL.PLLN = cfg.vco_multiplier;
+  pll_osc.PLL.PLLP = pllp_bits(cfg.general_divisor);
+  pll_osc.PLL.PLLQ = cfg.pll48_divisor;
+  HAL_RCC_OscConfig(&pll_osc);
+
+  // Switch back to the (now reconfigured) PLL with the requested bus dividers.
+  RCC_ClkInitTypeDef to_pll = {};
+  to_pll.ClockType = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK
+                    | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  to_pll.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  to_pll.AHBCLKDivider = ahb_prescaler(cfg.ahb_divisor);
+  to_pll.APB1CLKDivider = apb_prescaler(cfg.apb1_divisor);
+  to_pll.APB2CLKDivider = apb_prescaler(cfg.apb2_divisor);
+  HAL_RCC_ClockConfig(&to_pll, (std::uint32_t) cfg.flash_latency);
+}
+
+
+/*******************************************************************************
  * Driver API.
  */
 
 void init() {
   // Turn on I/O compensation cell to reduce noise on power supply.
-  rcc.enable_clock(ApbPeripheral::syscfg);
-  syscfg.write_cmpcr(syscfg.read_cmpcr().with_cmp_pd(true));
+  __HAL_RCC_SYSCFG_CLK_ENABLE();
+  SYSCFG->CMPCR |= SYSCFG_CMPCR_CMP_PD;
 
   // Turn a bunch of stuff on.
-  rcc.enable_clock(AhbPeripheral::SYNC_GPIO);  // Sync signals
-  rcc.enable_clock(AhbPeripheral::VIDEO_GPIO);  // Video
-  rcc.enable_clock(AhbPeripheral::dma2);
+  SYNC_GPIO_CLK_ENABLE();
+  VIDEO_GPIO_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
-  auto &st = dma2.stream5;
-
-  // DMA configuration
-
-  // Configure FIFO.
-  st.write_fcr(Dma::Stream::fcr_value_t()
-               .with_fth(Dma::Stream::fcr_value_t::fth_t::quarter)
-               .with_dmdis(true)
-               .with_feie(false));
+  // Configure FIFO: quarter threshold, FIFO enabled (direct mode disabled),
+  // FIFO error interrupt off.
+  DMA2_Stream5->FCR = DMA_SxFCR_DMDIS;
 
   // Configure the pixel-generation timer used during reduced-horizontal mode.
   // We use TIM1; it's an APB2 (fast) peripheral, and with our clock config
   // it gets clocked at the full CPU rate.  We'll load ARR under rasterizer
   // control to synthesize 1/n rates.
-  rcc.enable_clock(ApbPeripheral::tim1);
-  tim1.write_psc(1 - 1);  // Divide input clock by 1.
-  tim1.write_cr1(AdvTimer::cr1_value_t()
-      .with_urs(true));
-  tim1.write_dier(AdvTimer::dier_value_t()
-      .with_ude(true));  // DRQ on update
+  __HAL_RCC_TIM1_CLK_ENABLE();
+  TIM1->PSC = 0;  // Divide input clock by 1.
+  TIM1->CR1 = TIM_CR1_URS;
+  TIM1->DIER = TIM_DIER_UDE;  // DRQ on update
 
   // Configure our interrupt priorities.  The scheme is:
   //  TIM4 (horizontal) gets highest priority.
   //  TIM3 (shock absorber) is set just lower.
   //  PendSV (rendering, user code) is lowest.
   // We could fit other stuff into the gaps later.
-  // Note that PendSV is set using ARMv7-M priorities (0-255) and the others are
-  // set using narrower SoC priorities (0-15).  This is a bit ugly.
-  set_irq_priority(Interrupt::tim4, 0);
-  set_irq_priority(Interrupt::tim3, 1);
-  scb.set_exception_priority(etl::armv7m::Exception::pend_sv, 0xFF);
+  NVIC_SetPriority(TIM4_IRQn, 0);
+  NVIC_SetPriority(TIM3_IRQn, 1);
+  NVIC_SetPriority(PendSV_IRQn, (1 << __NVIC_PRIO_BITS) - 1);
 
   // Halt all our timers on debug.
-  dbg.write_dbgmcu_apb1_fz(dbg.read_dbgmcu_apb1_fz()
-                           .with_dbg_tim4_stop(true)
-                           .with_dbg_tim3_stop(true));
-
-  dbg.write_dbgmcu_apb2_fz(dbg.read_dbgmcu_apb2_fz()
-                           .with_dbg_tim1_stop(true));
+  DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_TIM4_STOP | DBGMCU_APB1_FZ_DBG_TIM3_STOP;
+  DBGMCU->APB2FZ |= DBGMCU_APB2_FZ_DBG_TIM1_STOP;
 
   // Enable Flash cache and prefetching to try and reduce jitter.
   // This only affects best-effort-level code, not anything realtime.
-  flash.write_acr(flash.read_acr()
-                  .with_dcen(true)
-                  .with_icen(true)
-                  .with_prften(true));
+  __HAL_FLASH_DATA_CACHE_ENABLE();
+  __HAL_FLASH_INSTRUCTION_CACHE_ENABLE();
+  __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
 
   band_list_head = nullptr;
   band_list_taken = false;
 
   sync_off();
   video_off();
-  arena_reset();
 }
 
 void sync_off() {
-  SYNC_GPIO.set_mode(HSYNC_PIN | VSYNC_PIN, Gpio::Mode::input);
-  SYNC_GPIO.set_pull(HSYNC_PIN | VSYNC_PIN, Gpio::Pull::down);
+  GPIO_InitTypeDef gpio = {};
+  gpio.Pin = (1u << HSYNC_PIN) | (1u << VSYNC_PIN);
+  gpio.Mode = GPIO_MODE_INPUT;
+  gpio.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(SYNC_GPIO_PORT, &gpio);
 }
 
 void video_off() {
-  VIDEO_GPIO.set_mode(VIDEO_GPIO_MASK, Gpio::Mode::input);
-  VIDEO_GPIO.set_pull(VIDEO_GPIO_MASK, Gpio::Pull::down);
+  GPIO_InitTypeDef gpio = {};
+  gpio.Pin = VIDEO_GPIO_MASK;
+  gpio.Mode = GPIO_MODE_INPUT;
+  gpio.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(VIDEO_GPIO_PORT, &gpio);
 }
 
 void sync_on() {
-  // Configure PD15 to produce hsync using TIM4_CH4
-  SYNC_GPIO.set_alternate_function(HSYNC_PIN, 2);
-  SYNC_GPIO.set_output_type(HSYNC_PIN, Gpio::OutputType::push_pull);
-  SYNC_GPIO.set_output_speed(HSYNC_PIN, Gpio::OutputSpeed::fast_50mhz);
-  SYNC_GPIO.set_mode(HSYNC_PIN, Gpio::Mode::alternate);
+  // Configure the hsync pin to produce hsync via TIM4 (AF2).
+  GPIO_InitTypeDef gpio = {};
+  gpio.Pin = (1u << HSYNC_PIN);
+  gpio.Mode = GPIO_MODE_AF_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_HIGH;  // fast_50mhz
+  gpio.Alternate = GPIO_AF2_TIM4;
+  HAL_GPIO_Init(SYNC_GPIO_PORT, &gpio);
 
-  // Configure PD14 as GPIO output.
-  SYNC_GPIO.set_output_type(VSYNC_PIN, Gpio::OutputType::push_pull);
-  SYNC_GPIO.set_output_speed(VSYNC_PIN, Gpio::OutputSpeed::fast_50mhz);
-  SYNC_GPIO.set_mode(VSYNC_PIN, Gpio::Mode::gpio);
+  // Configure the vsync pin as a plain GPIO output.
+  gpio.Pin = (1u << VSYNC_PIN);
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(SYNC_GPIO_PORT, &gpio);
 }
 
 void video_on() {
-  // Configure the high byte of port E for parallel video.
+  // Configure the video output pins for parallel video.
   // Using 100MHz output speed gets slightly sharper transitions than 50MHz.
-  VIDEO_GPIO.set_output_type(VIDEO_GPIO_MASK, Gpio::OutputType::push_pull);
-  VIDEO_GPIO.set_output_speed(VIDEO_GPIO_MASK, Gpio::OutputSpeed::high_100mhz);
-  VIDEO_GPIO.set_mode(VIDEO_GPIO_MASK, Gpio::Mode::gpio);
+  GPIO_InitTypeDef gpio = {};
+  gpio.Pin = VIDEO_GPIO_MASK;
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(VIDEO_GPIO_PORT, &gpio);
 }
 
 /*
  * Sets up one of the two horizontal timers, which share almost all of their
  * init code.
  */
-static void configure_h_timer(Timing const &timing,
-                              ApbPeripheral p,
-                              GpTimer &tim) {
-  rcc.enable_clock(p);
-  rcc.leave_reset(p);
-
-  // Configure the timer to count in pixels.  These timers live on APB1.
-  // Like all APB timers they get their clocks doubled at certain APB
-  // multipliers.
+static void configure_h_timer(Timing const &timing, TIM_TypeDef *tim) {
   auto apb_cycles_per_pixel = timing.clock_config.apb1_divisor > 1
       ? (timing.cycles_per_pixel * 2 / timing.clock_config.apb1_divisor)
       : timing.cycles_per_pixel;
 
-  tim.write_psc(apb_cycles_per_pixel - 1);
+  tim->PSC = apb_cycles_per_pixel - 1;
+  tim->ARR = timing.line_pixels - 1;
 
-  tim.write_arr(timing.line_pixels - 1);
-
-#ifdef BOARD2
-  tim.write_ccr1(timing.sync_pixels);
-#else
-  tim.write_ccr4(timing.sync_pixels);
-#endif
-
-  tim.write_ccr2(timing.sync_pixels
-                 + timing.back_porch_pixels - timing.video_lead);
-  tim.write_ccr3(timing.sync_pixels
-                 + timing.back_porch_pixels + timing.video_pixels);
+  bool negative = timing.hsync_polarity == Timing::Polarity::negative;
 
 #ifdef BOARD2
   // TIM4CH1, PB6
-
-  tim.write_ccmr1(GpTimer::ccmr1_value_t()
-                  .with_oc1m(GpTimer::OcMode::pwm1)
-                  .with_cc1s(GpTimer::ccmr1_value_t::cc1s_t::output));
-
-  tim.write_ccer(GpTimer::ccer_value_t()
-                 .with_cc1e(true)
-                 .with_cc1p(timing.hsync_polarity == Timing::Polarity::negative));
+  tim->CCR1 = timing.sync_pixels;
+  tim->CCMR1 = (tim->CCMR1 & ~(TIM_CCMR1_CC1S | TIM_CCMR1_OC1M))
+             | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1;  // PWM mode 1
+  tim->CCER = (tim->CCER & ~TIM_CCER_CC1P)
+            | TIM_CCER_CC1E
+            | (negative ? TIM_CCER_CC1P : 0);
 #else
   // TIM4CH4, PD15
-
-  tim.write_ccmr2((GpTimer::ccmr2_value_t::access_type)
-		  	  	  GpTimer::ccmr1_value_t()
-                  .with_oc2m(GpTimer::OcMode::pwm1)
-                  .with_cc2s(GpTimer::ccmr1_value_t::cc2s_t::output));
-
-  tim.write_ccer(GpTimer::ccer_value_t()
-                 .with_cc4e(true)
-                 .with_cc4p(timing.hsync_polarity == Timing::Polarity::negative));
+  tim->CCR4 = timing.sync_pixels;
+  tim->CCMR2 = (tim->CCMR2 & ~(TIM_CCMR2_CC4S | TIM_CCMR2_OC4M))
+             | TIM_CCMR2_OC4M_2 | TIM_CCMR2_OC4M_1;  // PWM mode 1
+  tim->CCER = (tim->CCER & ~TIM_CCER_CC4P)
+            | TIM_CCER_CC4E
+            | (negative ? TIM_CCER_CC4P : 0);
 #endif
-}
 
-/*
- * Safely shut down a timer, so that we can reconfigure without interlocks.
- */
-static void disable_h_timer(ApbPeripheral p,
-                            Interrupt irq) {
-  // Ensure that we'll receive no further interrupts.
-  disable_irq(irq);
-  // Ensure that the peripheral will generate no further interrupts.
-  rcc.enter_reset(p);
-  // In case of race condition between the above actions, clear any pending.
-  clear_pending_irq(irq);
+  tim->CCR2 = timing.sync_pixels
+            + timing.back_porch_pixels - timing.video_lead;
+  tim->CCR3 = timing.sync_pixels
+            + timing.back_porch_pixels + timing.video_pixels;
 }
 
 void configure_timing(Timing const &timing) {
@@ -350,65 +364,76 @@ void configure_timing(Timing const &timing) {
   video_off();
 
   // Place the horizontal timers in reset, disabling interrupts.
-  disable_h_timer(ApbPeripheral::tim4, Interrupt::tim4);
-  disable_h_timer(ApbPeripheral::tim3, Interrupt::tim3);
+  NVIC_DisableIRQ(TIM4_IRQn);
+  __HAL_RCC_TIM4_FORCE_RESET();
+  NVIC_ClearPendingIRQ(TIM4_IRQn);
+
+  NVIC_DisableIRQ(TIM3_IRQn);
+  __HAL_RCC_TIM3_FORCE_RESET();
+  NVIC_ClearPendingIRQ(TIM3_IRQn);
 
   // Busy-wait for pending DMA to complete.
-  while (dma2.stream5.read_cr().get_en());
+  while (DMA2_Stream5->CR & DMA_SxCR_EN) {}
 
   // No scanout strategy can achieve fewer than 4 cycles per pixel.
-  ETL_ASSERT(timing.cycles_per_pixel >= 4);
+  assert(timing.cycles_per_pixel >= 4);
   // Because horizontal timing is managed by timers on the slower APB1 bus,
   // make sure that we can express the (AHB) cycles_per_pixel in APB1 units.
   if (timing.clock_config.apb1_divisor > 1) {
-    ETL_ASSERT(timing.cycles_per_pixel % (timing.clock_config.apb1_divisor / 2)
-                  == 0);
+    assert(timing.cycles_per_pixel % (timing.clock_config.apb1_divisor / 2)
+           == 0);
   }
 
   // Switch to new CPU clock settings.
-  rcc.configure_clocks(timing.clock_config);
+  configure_clocks(timing.clock_config);
+
+  // Bring TIM3/TIM4 back out of reset.
+  __HAL_RCC_TIM4_RELEASE_RESET();
+  __HAL_RCC_TIM3_RELEASE_RESET();
+  __HAL_RCC_TIM4_CLK_ENABLE();
+  __HAL_RCC_TIM3_CLK_ENABLE();
 
   // Configure TIM3/4 for horizontal sync generation.
-  configure_h_timer(timing, ApbPeripheral::tim3, tim3);
-  configure_h_timer(timing, ApbPeripheral::tim4, tim4);
+  configure_h_timer(timing, TIM3);
+  configure_h_timer(timing, TIM4);
 
   // Adjust tim3's CC2 value back in time.
-  tim3.write_ccr2(Word(tim3.read_ccr2()) - shock_absorber_shift_cycles);
+  TIM3->CCR2 = TIM3->CCR2 - shock_absorber_shift_cycles;
 
   // Configure tim3 to distribute its enable signal as its trigger output.
-  tim3.write_cr2(GpTimer::cr2_value_t()
-                 .with_mms(GpTimer::cr2_value_t::mms_t::enable)
-                 .with_ccds(false));
+  TIM3->CR2 = (TIM3->CR2 & ~(TIM_CR2_MMS | TIM_CR2_CCDS)) | TIM_CR2_MMS_0;
 
   // Configure tim4 to trigger from tim3 and run forever.
-  tim4.write_smcr(GpTimer::smcr_value_t()
-                  .with_ts(GpTimer::smcr_value_t::ts_t::itr2)
-                  .with_sms(GpTimer::smcr_value_t::sms_t::trigger));
+  TIM4->SMCR = (TIM4->SMCR & ~(TIM_SMCR_TS | TIM_SMCR_SMS))
+             | TIM_SMCR_TS_1                       // ITR2 (TIM3)
+             | TIM_SMCR_SMS_2 | TIM_SMCR_SMS_1;    // Trigger mode
 
   // Turn on tim4's interrupts.
-  tim4.write_dier(GpTimer::dier_value_t()
-                  .with_cc2ie(true)    // Interrupt at start of active video.
-                  .with_cc3ie(true));  // Interrupt at end of active video.
+  TIM4->DIER = TIM_DIER_CC2IE     // Interrupt at start of active video.
+             | TIM_DIER_CC3IE;    // Interrupt at end of active video.
 
   // Turn on only one of tim3's
-  tim3.write_dier(GpTimer::dier_value_t()
-                  .with_cc2ie(true));  // Interrupt at start of active video.
+  TIM3->DIER = TIM_DIER_CC2IE;    // Interrupt at start of active video.
 
   // Note: timers still not running.
 
   switch (timing.vsync_polarity) {
-    case Timing::Polarity::positive: SYNC_GPIO.clear(VSYNC_PIN); break;
-    case Timing::Polarity::negative: SYNC_GPIO.set  (VSYNC_PIN); break;
+    case Timing::Polarity::positive:
+      HAL_GPIO_WritePin(SYNC_GPIO_PORT, 1u << VSYNC_PIN, GPIO_PIN_RESET);
+      break;
+    case Timing::Polarity::negative:
+      HAL_GPIO_WritePin(SYNC_GPIO_PORT, 1u << VSYNC_PIN, GPIO_PIN_SET);
+      break;
   }
 
   // Scribble over working buffer to help catch bugs.
-  for (size_t i = 0; i < sizeof(working.buffer); i += 2) {
+  for (std::size_t i = 0; i < sizeof(working.buffer); i += 2) {
     working.buffer[i] = 0xFF;
     working.buffer[i + 1] = 0x00;
   }
 
   // Blank the final word of the scan buffer.
-  for (unsigned i = 0; i < sizeof(Word); ++i) {
+  for (unsigned i = 0; i < sizeof(std::uint32_t); ++i) {
     scan_buffer[timing.video_pixels + i] = 0;
   }
 
@@ -427,9 +452,9 @@ void configure_timing(Timing const &timing) {
   scan_buffer_needs_update = false;
 
   // Start TIM3, which starts TIM4.
-  enable_irq(Interrupt::tim3);
-  enable_irq(Interrupt::tim4);
-  tim3.write_cr1(tim3.read_cr1().with_cen(true));
+  NVIC_EnableIRQ(TIM3_IRQn);
+  NVIC_EnableIRQ(TIM4_IRQn);
+  TIM3->CR1 |= TIM_CR1_CEN;
 
   sync_on();
 }
@@ -441,11 +466,11 @@ void configure_band_list(Band const *head) {
 
 void clear_band_list() {
   configure_band_list(nullptr);
-  while (!band_list_taken) etl::armv7m::wait_for_interrupt();
+  while (!band_list_taken) __WFI();
 }
 
 void wait_for_vblank() {
-  while (!in_vblank()) etl::armv7m::wait_for_interrupt();
+  while (!in_vblank()) __WFI();
 }
 
 bool in_vblank() {
@@ -453,7 +478,7 @@ bool in_vblank() {
 }
 
 void sync_to_vblank() {
-  while (in_vblank()) etl::armv7m::wait_for_interrupt();
+  while (in_vblank()) __WFI();
   wait_for_vblank();
 }
 
@@ -466,21 +491,16 @@ RAM_CODE
 static void start_of_active_video() {
   // The start-of-active-video (SAV) event is only significant during visible
   // lines.
-  if (ETL_UNLIKELY(!is_displayed_state(state))) return;
+  if (UNLIKELY(!is_displayed_state(state))) return;
 
-  // Clear stream 5 flags (hifcr is a write-1-to-clear register).
-  dma2.write_hifcr(Dma::hifcr_value_t()
-                   .with_cdmeif5(true)
-                   .with_cteif5(true)
-                   .with_chtif5(true)
-                   .with_ctcif5(true));
+  // Clear stream 5 flags (HIFCR is a write-1-to-clear register).
+  DMA2->HIFCR = DMA_HIFCR_CDMEIF5 | DMA_HIFCR_CTEIF5
+              | DMA_HIFCR_CHTIF5 | DMA_HIFCR_CTCIF5;
 
   // Start the countdown for first DRQ.
-  tim1.write_cr1(AdvTimer::cr1_value_t()
-      .with_urs(true)
-      .with_cen(next_use_timer));
+  TIM1->CR1 = TIM_CR1_URS | (next_use_timer ? TIM_CR1_CEN : 0);
 
-  dma2.stream5.write_cr(next_dma_xfer);
+  DMA2_Stream5->CR = next_dma_xfer_cr;
 }
 
 RAM_CODE
@@ -489,17 +509,15 @@ static void end_of_active_video() {
   // the line state machine and kicks off PendSV.
 
   // Shut off TIM1; only really matters in reduced-horizontal mode.
-  tim1.write_cr1(AdvTimer::cr1_value_t()
-      .with_urs(true)
-      .with_cen(false));
+  TIM1->CR1 = TIM_CR1_URS;
 
   // Apply timing changes requested by the last rasterizer.
-  tim4.write_ccr2(current_timing.sync_pixels
-                  + current_timing.back_porch_pixels - current_timing.video_lead
-                  + working_buffer_shape.offset);
+  TIM4->CCR2 = current_timing.sync_pixels
+             + current_timing.back_porch_pixels - current_timing.video_lead
+             + working_buffer_shape.offset;
 
   // Pend a PendSV to process hblank tasks.
-  scb.write_icsr(Scb::icsr_value_t().with_pendsvset(true));
+  SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
 
   // We've finished this line; figure out what to do on the next one.
   unsigned next_line = current_line + 1;
@@ -507,8 +525,8 @@ static void end_of_active_video() {
   if (next_line == current_timing.vsync_start_line
       || next_line == current_timing.vsync_end_line) {
     // Either edge of vsync pulse.
-	SYNC_GPIO.toggle(VSYNC_PIN);
-  } else if (next_line == uint16_t(current_timing.video_start_line - 1)) {
+    SYNC_GPIO_PORT->ODR ^= (1u << VSYNC_PIN);
+  } else if (next_line == std::uint16_t(current_timing.video_start_line - 1)) {
     // We're one line before scanout begins -- need to start rasterizing.
     state = State::starting;
     if (band_list_head) {
@@ -521,12 +539,12 @@ static void end_of_active_video() {
     // Time to start output.  This will cause PendSV to copy rasterization
     // output into place for scanout, and the next SAV will start DMA.
     state = State::active;
-  } else if (next_line == uint16_t(current_timing.video_end_line - 1)) {
+  } else if (next_line == std::uint16_t(current_timing.video_end_line - 1)) {
     // For the final line, suppress rasterization but continue preparing
     // previously rasterized data for scanout, and continue starting DMA in
     // SAV.
     state = State::finishing;
-  } else if (next_line == uint16_t(current_timing.video_end_line)) {
+  } else if (next_line == std::uint16_t(current_timing.video_end_line)) {
     // All done!  Suppress all scanout activity.
     state = State::blank;
     next_line = 0;
@@ -580,12 +598,13 @@ static void update_scan_buffer() {
     // Note that GCC can't see that we've aligned the buffers correctly, so we
     // have to do a multi-cast dance. :-/
     copy_words(
-        reinterpret_cast<Word const *>(
+        reinterpret_cast<std::uint32_t const *>(
           static_cast<void *>(working.buffer)),
-        reinterpret_cast<Word *>(
+        reinterpret_cast<std::uint32_t *>(
           static_cast<void *>(scan_buffer)),
-        (working_buffer_shape.length + sizeof(Word) - 1) / sizeof(Word));
-    for (unsigned i = 0; i < sizeof(Word); ++i) {
+        (working_buffer_shape.length + sizeof(std::uint32_t) - 1)
+          / sizeof(std::uint32_t));
+    for (unsigned i = 0; i < sizeof(std::uint32_t); ++i) {
       scan_buffer[working_buffer_shape.length + i] = 0;
     }
     scan_buffer_needs_update = false;
@@ -598,83 +617,78 @@ static void update_scan_buffer() {
  */
 RAM_CODE
 static void prepare_for_scanout() {
-  auto & st = dma2.stream5;
-  st.write_cr(st.read_cr().with_en(false));
+  DMA2_Stream5->CR &= ~DMA_SxCR_EN;
 
   if (working_buffer_shape.cycles_per_pixel > 4) {
     // Adjust reload frequency of TIM1 to accomodate desired pixel clock.
     // (ARR value is period - 1.)
-    tim1.write_arr(working_buffer_shape.cycles_per_pixel - 1);
+    TIM1->ARR = working_buffer_shape.cycles_per_pixel - 1;
     // Force an update to reset the timer state.
-    tim1.write_egr(AdvTimer::egr_value_t().with_ug(true));
+    TIM1->EGR = TIM_EGR_UG;
     // Configure the timer as *almost* ready to produce a DRQ, less a small
     // value (fudge factor).  Gotta do this after the update event, above,
     // because that clears CNT.
-    tim1.write_cnt(uint32_t(tim1.read_arr()) - drq_shift_cycles);
-    tim1.write_sr(0);
+    TIM1->CNT = TIM1->ARR - drq_shift_cycles;
+    TIM1->SR = 0;
 
-    st.write_par(VIDEO_GPIO_ODR);  // Used byte of VIDEO_GPIO ODR
-    st.write_m0ar(reinterpret_cast<Word>(&scan_buffer));
+    DMA2_Stream5->PAR = VIDEO_GPIO_ODR_BYTE;  // Used byte of VIDEO_GPIO ODR
+    DMA2_Stream5->M0AR = reinterpret_cast<std::uint32_t>(&scan_buffer);
 
     // The number of bytes read must exactly match the number of bytes written,
     // or the DMA controller will freak out.  Thus, we must adapt the transfer
     // size to the number of bytes transferred.
-    Dma::Stream::TransferSize msize;
+    std::uint32_t msize;
     switch (working_buffer_shape.length & 3) {
       case 0:
-        msize = Dma::Stream::TransferSize::word;
-        st.write_ndtr(working_buffer_shape.length + sizeof(Word));
+        msize = DMA_SxCR_MSIZE_1;  // word
+        DMA2_Stream5->NDTR = working_buffer_shape.length + sizeof(std::uint32_t);
         break;
 
       case 2:
-        msize = Dma::Stream::TransferSize::half_word;
-        st.write_ndtr(working_buffer_shape.length + sizeof(HalfWord));
+        msize = DMA_SxCR_MSIZE_0;  // half-word
+        DMA2_Stream5->NDTR = working_buffer_shape.length + sizeof(std::uint16_t);
         break;
 
       default:
-        msize = Dma::Stream::TransferSize::byte;
-        st.write_ndtr(working_buffer_shape.length + sizeof(Byte));
+        msize = 0;  // byte
+        DMA2_Stream5->NDTR = working_buffer_shape.length + sizeof(std::uint8_t);
         break;
     }
 
-    next_dma_xfer = dma_xfer_common
-        .with_dir(Dma::Stream::cr_value_t::dir_t::memory_to_peripheral)
-        .with_msize(msize)
-        .with_minc(true)
-        .with_psize(Dma::Stream::TransferSize::byte)
-        .with_pinc(false);
+    next_dma_xfer_cr = dma_xfer_common_cr
+        | (1UL << DMA_SxCR_DIR_Pos)  // memory-to-peripheral
+        | msize
+        | DMA_SxCR_MINC;            // psize = byte (0), pinc = false
     next_use_timer = true;
 
   } else {
     // Note that we're using memory as the peripheral side.
     // This DMA controller is a little odd.
-    st.write_par(reinterpret_cast<Word>(&scan_buffer));
-    st.write_m0ar(VIDEO_GPIO_ODR);  // Used byte of VIDEO_GPIO ODR
+    DMA2_Stream5->PAR = reinterpret_cast<std::uint32_t>(&scan_buffer);
+    DMA2_Stream5->M0AR = VIDEO_GPIO_ODR_BYTE;  // Used byte of VIDEO_GPIO ODR
 
-    Dma::Stream::TransferSize psize;
+    std::uint32_t psize;
     switch (working_buffer_shape.length & 3) {
       case 0:
-        psize = Dma::Stream::TransferSize::word;
-        st.write_ndtr(working_buffer_shape.length / sizeof(Word) + 1);
+        psize = DMA_SxCR_PSIZE_1;  // word
+        DMA2_Stream5->NDTR = working_buffer_shape.length / sizeof(std::uint32_t) + 1;
         break;
 
       case 2:
-        psize = Dma::Stream::TransferSize::half_word;
-        st.write_ndtr(working_buffer_shape.length / sizeof(HalfWord) + 1);
+        psize = DMA_SxCR_PSIZE_0;  // half-word
+        DMA2_Stream5->NDTR = working_buffer_shape.length / sizeof(std::uint16_t) + 1;
         break;
 
       default:
-        psize = Dma::Stream::TransferSize::byte;
-        st.write_ndtr(working_buffer_shape.length / sizeof(Byte) + 1);
+        psize = 0;  // byte
+        DMA2_Stream5->NDTR = working_buffer_shape.length / sizeof(std::uint8_t) + 1;
         break;
     }
 
-    next_dma_xfer = dma_xfer_common
-        .with_dir(Dma::Stream::cr_value_t::dir_t::memory_to_memory)
-        .with_psize(psize)
-        .with_pinc(true)
-        .with_msize(Dma::Stream::TransferSize::byte)
-        .with_minc(false);
+    next_dma_xfer_cr = dma_xfer_common_cr
+        | (2UL << DMA_SxCR_DIR_Pos)  // memory-to-memory
+        | psize
+        | DMA_SxCR_PINC;            // msize = byte (0), minc = false
     next_use_timer = false;
   }
 }
@@ -723,36 +737,36 @@ static void rasterize_next_line() {
 void vga_hblank_interrupt()
   __attribute__((weak, alias("_ZN3vga24default_hblank_interruptEv")));
 
-IRQ RAM_CODE void etl_stm32f4xx_tim3_handler() {
+extern "C" RAM_CODE void TIM3_IRQHandler() {
   // We access this APB2 timer through the bridge on AHB1.  This implies
   // both wait states and resource conflicts with scanout.  Get done fast.
-  tim3.write_sr(tim3.read_sr().with_cc2if(false));
+  TIM3->SR = static_cast<std::uint16_t>(~TIM_SR_CC2IF);
 
   // Idle the processor until preempted by any higher-priority interrupt.
   // This ensures that the M4's D-code bus is available for exception entry.
   // NOTE: this behaves correctly on the M4, but WFI is not guaranteed to
   // actually do anything.
-  etl::armv7m::wait_for_interrupt();
+  __WFI();
 }
 
-IRQ RAM_CODE void etl_stm32f4xx_tim4_handler() {
+extern "C" RAM_CODE void TIM4_IRQHandler() {
   // We have to clear our interrupt flags, or this will recur.
-  auto sr = tim4.read_sr();
+  auto sr = TIM4->SR;
 
-  if (ETL_LIKELY(sr.get_cc2if())) {
-    tim4.write_sr(sr.with_cc2if(false));
+  if (LIKELY(sr & TIM_SR_CC2IF)) {
+    TIM4->SR = static_cast<std::uint16_t>(~TIM_SR_CC2IF);
     vga::start_of_active_video();
     return;
   }
 
-  if (sr.get_cc3if()) {
-    tim4.write_sr(sr.with_cc3if(false));
+  if (sr & TIM_SR_CC3IF) {
+    TIM4->SR = static_cast<std::uint16_t>(~TIM_SR_CC3IF);
     vga::end_of_active_video();
     return;
   }
 }
 
-IRQ RAM_CODE void etl_armv7m_pend_sv_handler() {
+extern "C" RAM_CODE void PendSV_Handler() {
   // PendSV event is triggered shortly after EAV to process lower-priority
   // tasks.
 
@@ -763,7 +777,7 @@ IRQ RAM_CODE void etl_armv7m_pend_sv_handler() {
   //
   // This writes to the scanout buffer *and* accesses AHB/APB peripherals, so it
   // *cannot* run concurrently with scanout -- so we do it first, during hblank.
-  if (ETL_LIKELY(is_displayed_state(vga::state))) {
+  if (LIKELY(is_displayed_state(vga::state))) {
     vga::update_scan_buffer();
     vga::prepare_for_scanout();
   }
@@ -775,7 +789,7 @@ IRQ RAM_CODE void etl_armv7m_pend_sv_handler() {
   // Rasterization can take a while, and may run concurrently with scanout.
   // As a result, we just stash our results in places where the *next* PendSV
   // will find and apply them.
-  if (ETL_LIKELY(is_rendered_state(vga::state))) {
+  if (LIKELY(is_rendered_state(vga::state))) {
     vga::rasterize_next_line();
   }
 }

@@ -2,7 +2,7 @@
 #define _VIDEOSETTINGS_H
 
 #include <stdint.h>
-#include "m4vgalib/timing.h"
+#include "vga/timing.h"
 
 namespace Display
 {

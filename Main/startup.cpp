@@ -3,15 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "stm32f4xx.h"
-#include "m4vgalib/vga.h"
-#include "m4vgalib/timing.h"
+#include "vga/vga.h"
+#include "vga/timing.h"
 
-#include "etl/stm32f4xx/gpio.h"
 #include <Display/Screen.h>
 #include <Display/StatusScreen.h>
 #include <Keyboard/ps2Keyboard.h>
 
-using namespace etl::stm32f4xx;
 using namespace Display;
 
 static uint32_t _frames = 0;

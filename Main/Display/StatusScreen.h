@@ -2,7 +2,7 @@
 #define __STATUSSCREEN_H
 
 #include "Screen.h"
-#include "m4vgalib/rasterizer.h"
+#include "vga/rasterizer.h"
 
 using namespace vga;
 

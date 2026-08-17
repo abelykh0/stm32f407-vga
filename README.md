@@ -51,4 +51,4 @@ Alternative pinout (define BOARD2):
 
 
 ## Project Description
-This project uses [Cliff L. Biffle's m4vgalib](https://github.com/cbiffle/m4vgalib) to display "Hello, world".
+This project drives VGA output directly via STM32 HAL/CMSIS (TIM1/TIM3/TIM4, DMA2 and GPIO) to display "Hello, world".
